@@ -14,7 +14,7 @@
     "lint": "eslint .",
     "format": "prettier --write .",
     "test:rules": "scripts/with-java.sh npx firebase emulators:exec --only firestore \"npx vitest run tests/rules/firestore.rules.test.ts\"",
-    "test:functions": "echo \"test:functions: no Cloud Functions tests yet (Task 3 adds them)\""
+    "test:functions": "scripts/with-java.sh npx firebase emulators:exec --only firestore,auth \"npx vitest run functions/src/callable\""
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
