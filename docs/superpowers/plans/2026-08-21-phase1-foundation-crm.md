@@ -56,6 +56,16 @@ These apply to every task below — copy verbatim into each dispatch, do not re-
 - **No Cloud CI/CD required this phase** — deploys are manual, gated by a `predeploy` npm
   script that must run the full rules + functions test suite before any `firebase deploy`
   (this is a standing rule beyond phase 1, not just an initial step).
+- **Firestore emulator requires the Java wrapper**: this environment has no system
+  Java runtime. A local, non-sudo JDK and a resolver script are already set up at
+  `scripts/with-java.sh` (committed in 8a44306) — every command that invokes
+  `firebase emulators:*` (rules tests, functions tests, manual verification) MUST be run
+  through it, e.g. `scripts/with-java.sh npx firebase emulators:exec --only
+  firestore,auth,functions "npm run test:rules"`. Do not assume `java` or a working
+  Firestore emulator on bare PATH — commands that skip the wrapper will fail with "Unable
+  to locate a Java Runtime". `firebase-tools` is already a root devDependency (added in
+  the same commit) — invoke it via `npx firebase` from the repo root, not a global
+  install.
 - **npm script naming (fixed now to avoid a Task-8 integration gap)**: the root
   `package.json` must expose `test:rules` and `test:functions` scripts that Task 8's
   `predeploy` script chains together. Task 2 is responsible for making `npm run
