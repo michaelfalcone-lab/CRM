@@ -1,0 +1,13 @@
+{
+  "name": "shared",
+  "version": "0.0.0",
+  "private": true,
+  "main": "dist/types.js",
+  "types": "dist/types.d.ts",
+  "scripts": {
+    "build": "tsc"
+  },
+  "devDependencies": {
+    "typescript": "~6.0.2"
+  }
+}

@@ -1,0 +1,16 @@
+{
+  "extends": "../tsconfig.base.json",
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2022"],
+    "module": "nodenext",
+    "moduleResolution": "nodenext",
+    "declaration": false,
+    "outDir": "lib",
+    "rootDir": "src",
+    "sourceMap": true,
+    "types": ["node"]
+  },
+  "include": ["src"],
+  "compileOnSave": true
+}
