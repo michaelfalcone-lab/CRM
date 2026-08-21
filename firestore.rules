@@ -1,5 +1,85 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
+
+    function isSignedIn() { return request.auth != null; }
+    function callerEmailLower() { return request.auth.token.email.lower(); }
+    function callerUserDoc() {
+      return get(/databases/$(database)/documents/users/$(callerEmailLower()));
+    }
+    function isActiveUser() {
+      return isSignedIn()
+        && exists(/databases/$(database)/documents/users/$(callerEmailLower()))
+        && callerUserDoc().data.active == true
+        && callerUserDoc().data.authUid == request.auth.uid;
+    }
+    function isAdmin() { return isActiveUser() && callerUserDoc().data.role == 'admin'; }
+    function callerUid() { return callerUserDoc().data.authUid; }
+    function ownsRecord() {
+      return isActiveUser() && resource.data.ownerId == callerUid();
+    }
+    function ownerUnchanged() {
+      return request.resource.data.ownerId == resource.data.ownerId;
+    }
+    function duplicateFieldsUnchanged() {
+      return request.resource.data.mergedInto == resource.data.mergedInto
+        && request.resource.data.duplicateReviewStatus == resource.data.duplicateReviewStatus
+        && request.resource.data.possibleDuplicateOf == resource.data.possibleDuplicateOf;
+    }
+
+    match /users/{userEmail} {
+      allow get: if isSignedIn() && callerEmailLower() == userEmail;
+      allow read: if isAdmin();
+      allow write: if isAdmin();
+    }
+
+    match /statuses/{statusId} {
+      allow read: if isActiveUser();
+      allow write: if isAdmin();
+    }
+
+    match /opportunityStages/{stageId} {
+      allow read: if isActiveUser();
+      allow write: if isAdmin();
+    }
+
+    match /organizations/{orgId} {
+      allow read: if isActiveUser();
+      allow create: if isActiveUser() && (isAdmin() || request.resource.data.ownerId == callerUid());
+      allow update: if isAdmin() || (ownsRecord() && ownerUnchanged());
+      allow delete: if isAdmin();
+    }
+
+    match /contacts/{contactId} {
+      allow read: if isActiveUser();
+      allow create: if isActiveUser() && (isAdmin() || request.resource.data.ownerId == callerUid());
+      allow update: if isAdmin() || (ownsRecord() && ownerUnchanged() && duplicateFieldsUnchanged());
+      allow delete: if isAdmin();
+
+      match /notes/{noteId} {
+        allow read: if isActiveUser();
+        allow create: if isActiveUser() && request.resource.data.authorId == callerUid();
+        allow update: if isAdmin() || (isActiveUser() && resource.data.authorId == callerUid()
+                        && request.resource.data.authorId == resource.data.authorId);
+        allow delete: if isAdmin() || (isActiveUser() && resource.data.authorId == callerUid());
+      }
+    }
+
+    match /opportunities/{opportunityId} {
+      allow read: if isActiveUser();
+      allow create: if isActiveUser() && (isAdmin() || request.resource.data.ownerId == callerUid());
+      allow update: if isAdmin() || (ownsRecord() && ownerUnchanged());
+      allow delete: if isAdmin();
+    }
+
+    match /importBatches/{batchId} {
+      allow read: if isActiveUser();
+      allow write: if false; // Functions only, via Admin SDK
+
+      match /rows/{contactId} {
+        allow read: if isActiveUser();
+        allow write: if false;
+      }
+    }
   }
 }

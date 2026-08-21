@@ -13,16 +13,19 @@
     "build": "npm run build --workspace=shared && npm run build --workspace=frontend && npm run build --workspace=functions",
     "lint": "eslint .",
     "format": "prettier --write .",
-    "test:rules": "echo \"test:rules: no Firestore rules tests yet (Task 2 adds them)\"",
+    "test:rules": "scripts/with-java.sh npx firebase emulators:exec --only firestore \"npx vitest run tests/rules/firestore.rules.test.ts\"",
     "test:functions": "echo \"test:functions: no Cloud Functions tests yet (Task 3 adds them)\""
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
+    "@firebase/rules-unit-testing": "^5.0.2",
     "eslint": "^10.9.0",
+    "firebase": "^12.18.0",
     "firebase-tools": "^13.29.1",
     "globals": "^17.11.0",
     "prettier": "^3.9.6",
     "typescript": "~6.0.2",
-    "typescript-eslint": "^8.67.0"
+    "typescript-eslint": "^8.67.0",
+    "vitest": "^4.1.11"
   }
 }
