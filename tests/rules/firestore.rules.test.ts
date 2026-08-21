@@ -24,6 +24,14 @@
  *     either role (deny for both, read allowed for active users)
  *   - a signed-in user with no matching users doc at all (deny everything
  *     requiring isActiveUser())
+ *
+ * Fix round 1 additions (independent security review follow-ups):
+ *   - callerEmailLower() actually lowercases a mixed-case auth token email
+ *   - users/{email} self-get: own doc (allow, even unlinked); another
+ *     user's doc (deny)
+ *   - ownerUnchanged()/duplicateFieldsUnchanged() fail closed (deny) when
+ *     the compared field is missing from the document entirely
+ *   - isSignedIn() denies when email_verified is false or absent
  */
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
@@ -215,8 +223,12 @@ beforeEach(async () => {
   await seedFixtures()
 })
 
-function ctxFor(uid: string, email: string) {
-  return testEnv.authenticatedContext(uid, { email })
+// `email_verified: true` mirrors what real Google Sign-In for a Workspace
+// account always sets on the ID token; `isSignedIn()` in firestore.rules
+// requires it. Callers that need to test an unverified-email identity can
+// still override via `claims`.
+function ctxFor(uid: string, email: string, claims: Record<string, unknown> = {}) {
+  return testEnv.authenticatedContext(uid, { email, email_verified: true, ...claims })
 }
 
 const admin = () => ctxFor(ADMIN_UID, ADMIN_EMAIL)
@@ -535,5 +547,78 @@ describe('importBatches and importBatches/{id}/rows are never client-writable', 
   it('admin is denied writing importBatches/{id}/rows (client-side — Functions only via Admin SDK)', async () => {
     const db = admin().firestore()
     await assertFails(updateDoc(doc(db, 'importBatches', 'batch-1', 'rows', 'contact-rep'), { action: 'updated' }))
+  })
+})
+
+// --- Fix round 1 additions below ---------------------------------------
+// The four describe blocks below close gaps identified by an independent
+// security review of the original 60-test suite: `.lower()` normalization
+// was never exercised (every fixture email was already lowercase), the
+// `users/{email}` self-`get` rule had zero coverage, the fail-closed
+// behavior of `ownerUnchanged()`/`duplicateFieldsUnchanged()` on a
+// genuinely missing field was untested, and `isSignedIn()` gained an
+// `email_verified` requirement that needed its own positive/negative
+// coverage.
+
+describe('callerEmailLower() normalization', () => {
+  it('a mixed-case auth token email resolves to the lowercase users doc and is treated as that active user', async () => {
+    // Same uid/doc as the `rep` fixture, but the auth token's email claim
+    // is mixed-case, the way some IdPs may present it. If `.lower()` were
+    // ever removed from `callerEmailLower()`, this would look up
+    // `users/Rep@Brown.edu` (which doesn't exist) instead of
+    // `users/rep@brown.edu`, `isActiveUser()` would be false, and this
+    // read would be denied.
+    const db = ctxFor(REP_UID, 'Rep@Brown.edu').firestore()
+    await assertSucceeds(getDoc(doc(db, 'contacts', 'contact-rep')))
+  })
+})
+
+describe('users/{email} self-get', () => {
+  it('a user can get their own users doc via get, even when unlinked (authUid mismatch)', async () => {
+    // This is the only rule reachable by a signed-in-but-not-yet-linked
+    // user — it's what lets the app check "have I been invited yet"
+    // before Task 3's linking flow runs. It must work regardless of the
+    // `active`/`authUid` state on the doc, since `allow get` here doesn't
+    // route through `isActiveUser()`.
+    const db = unlinkedRep().firestore()
+    await assertSucceeds(getDoc(doc(db, 'users', UNLINKED_EMAIL)))
+  })
+
+  it('a signed-in user is denied getting a different user\'s doc', async () => {
+    const db = rep().firestore()
+    await assertFails(getDoc(doc(db, 'users', REP2_EMAIL)))
+  })
+})
+
+describe('ownerUnchanged() / duplicateFieldsUnchanged() fail closed on a missing field', () => {
+  it('rep is denied updating an owned contact that is missing the mergedInto field entirely', async () => {
+    // Documents this as CURRENT, asserted behavior (not a change): when a
+    // compared field is genuinely absent (not null, just never set),
+    // `request.resource.data.mergedInto == resource.data.mergedInto`
+    // evaluates false in both directions, so the comparison denies. See
+    // the comment above `duplicateFieldsUnchanged()` in firestore.rules
+    // for the resulting contract on write paths that create contacts.
+    const contactId = 'contact-missing-merged-into'
+    await testEnv.withSecurityRulesDisabled(async (context) => {
+      const db = context.firestore()
+      const fixture: Record<string, unknown> = contactDoc(REP_UID)
+      delete fixture.mergedInto
+      await setDoc(doc(db, 'contacts', contactId), fixture)
+    })
+
+    const db = rep().firestore()
+    await assertFails(updateDoc(doc(db, 'contacts', contactId), { updatedAt: ts() }))
+  })
+})
+
+describe('isSignedIn() requires email_verified', () => {
+  it('a request with email_verified: false on the auth token is denied everything requiring isSignedIn()', async () => {
+    const db = ctxFor(REP_UID, REP_EMAIL, { email_verified: false }).firestore()
+    await assertFails(getDoc(doc(db, 'contacts', 'contact-rep')))
+  })
+
+  it('a request with email_verified omitted entirely from the auth token is denied everything requiring isSignedIn()', async () => {
+    const db = testEnv.authenticatedContext(REP_UID, { email: REP_EMAIL }).firestore()
+    await assertFails(getDoc(doc(db, 'contacts', 'contact-rep')))
   })
 })

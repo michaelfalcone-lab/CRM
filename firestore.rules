@@ -2,7 +2,9 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    function isSignedIn() { return request.auth != null; }
+    function isSignedIn() {
+      return request.auth != null && request.auth.token.email_verified == true;
+    }
     function callerEmailLower() { return request.auth.token.email.lower(); }
     function callerUserDoc() {
       return get(/databases/$(database)/documents/users/$(callerEmailLower()));
@@ -18,9 +20,24 @@ service cloud.firestore {
     function ownsRecord() {
       return isActiveUser() && resource.data.ownerId == callerUid();
     }
+    // Invariant for write paths that create documents in `contacts`,
+    // `organizations`, or `opportunities` (e.g. Task 4's commitImport and
+    // Task 6's contact-create UI): `ownerId` MUST be set at document
+    // creation. This function fails closed (denies) when the field is
+    // missing entirely, not just when it's null — a document created
+    // without `ownerId` permanently blocks its owning rep (non-admin) from
+    // ever updating it again, since `resource.data.ownerId` will never
+    // equal `request.resource.data.ownerId` if the former key doesn't
+    // exist. Only an admin could still write to such a document.
     function ownerUnchanged() {
       return request.resource.data.ownerId == resource.data.ownerId;
     }
+    // Same invariant as above, extended to `contacts` only: `mergedInto`,
+    // `duplicateReviewStatus`, and `possibleDuplicateOf` MUST all be set at
+    // contact creation (even explicitly to `null`). Omitting any of them
+    // fails this comparison closed (denies) on every subsequent non-admin
+    // owner update to that contact, for the same missing-field reason as
+    // `ownerUnchanged()` above.
     function duplicateFieldsUnchanged() {
       return request.resource.data.mergedInto == resource.data.mergedInto
         && request.resource.data.duplicateReviewStatus == resource.data.duplicateReviewStatus
