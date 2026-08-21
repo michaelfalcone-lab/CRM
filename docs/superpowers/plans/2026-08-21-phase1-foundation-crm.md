@@ -56,6 +56,16 @@ These apply to every task below — copy verbatim into each dispatch, do not re-
 - **No Cloud CI/CD required this phase** — deploys are manual, gated by a `predeploy` npm
   script that must run the full rules + functions test suite before any `firebase deploy`
   (this is a standing rule beyond phase 1, not just an initial step).
+- **npm script naming (fixed now to avoid a Task-8 integration gap)**: the root
+  `package.json` must expose `test:rules` and `test:functions` scripts that Task 8's
+  `predeploy` script chains together. Task 2 is responsible for making `npm run
+  test:rules` (from repo root) run the Firestore rules test suite against the emulator.
+  Tasks 3 and 4 are responsible for making `npm run test:functions` (from repo root) run
+  the Cloud Functions unit test suite — Task 3 creates this script, Task 4 extends the
+  same suite rather than adding a second script. Where exactly the test files live
+  (`/functions` workspace vs. a root-level `/test` dir) is each task's call to document,
+  but the two root-level script names are not negotiable, since later tasks depend on
+  them by name without re-deriving the convention.
 
 ## Task 1: Monorepo Scaffolding & Shared Types
 
