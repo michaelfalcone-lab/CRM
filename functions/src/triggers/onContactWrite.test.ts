@@ -1,0 +1,141 @@
+/**
+ * Unit tests for `onContactWrite`, run against the Firestore Local Emulator
+ * Suite via `npm run test:functions`. The trigger is exercised directly via
+ * `CloudFunction.run(event)` (the same testing escape hatch used for
+ * callables — see `lib/testSupport.ts`), with real `DocumentSnapshot`s read
+ * back from the emulator rather than hand-built ones.
+ */
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { Timestamp } from 'firebase-admin/firestore'
+import { db } from '../lib/firebaseAdmin'
+import { firestoreWriteEvent } from '../lib/testSupport'
+import { onContactWrite } from './onContactWrite'
+
+async function snapshotFor(id: string) {
+  return db.collection('contacts').doc(id).get()
+}
+
+describe('onContactWrite', () => {
+  beforeEach(async () => {
+    const existing = await db.collection('contacts').listDocuments()
+    await Promise.all(existing.map((ref) => ref.delete()))
+  })
+
+  it('computes nameLower and searchTokens on create, including org-name words', async () => {
+    const id = 'contact-create'
+    const ref = db.collection('contacts').doc(id)
+    const before = await snapshotFor(id)
+
+    await ref.set({
+      firstName: 'Ada',
+      lastName: 'Lovelace',
+      email: 'Ada.Lovelace@Example.com',
+      phone: '(401) 555-0100',
+      organizationName: 'Brown Athletics Boosters',
+      ownerId: 'owner-1',
+      source: 'manual',
+      externalIds: { paciolanCustomerId: null },
+      mergedInto: null,
+      duplicateReviewStatus: null,
+      possibleDuplicateOf: null,
+      searchTokens: [],
+      nameLower: '',
+      createdAt: Timestamp.now(),
+      updatedAt: Timestamp.now(),
+      createdBy: 'owner-1',
+      importBatchId: null,
+    })
+    const after = await snapshotFor(id)
+
+    await onContactWrite.run(
+      firestoreWriteEvent('contacts/{contactId}', { contactId: id }, before, after),
+    )
+
+    const updated = (await snapshotFor(id)).data()!
+    expect(updated.nameLower).toBe('ada lovelace')
+    expect(updated.searchTokens).toEqual(
+      expect.arrayContaining([
+        'ada',
+        'lovelace',
+        'ada lovelace',
+        'ada.lovelace@example.com',
+        'ada.lovelace',
+        '4015550100',
+        'brown',
+        'athletics',
+        'boosters',
+      ]),
+    )
+  })
+
+  it('does not write again once nameLower/searchTokens are already correct', async () => {
+    const id = 'contact-stable'
+    const ref = db.collection('contacts').doc(id)
+    const before = await snapshotFor(id)
+    await ref.set({
+      firstName: 'Grace',
+      lastName: 'Hopper',
+      ownerId: 'owner-1',
+      source: 'manual',
+      externalIds: { paciolanCustomerId: null },
+      mergedInto: null,
+      duplicateReviewStatus: null,
+      possibleDuplicateOf: null,
+      searchTokens: [],
+      nameLower: '',
+      createdAt: Timestamp.now(),
+      updatedAt: Timestamp.now(),
+      createdBy: 'owner-1',
+      importBatchId: null,
+    })
+    const firstAfter = await snapshotFor(id)
+    await onContactWrite.run(
+      firestoreWriteEvent('contacts/{contactId}', { contactId: id }, before, firstAfter),
+    )
+
+    const stableSnap = await snapshotFor(id)
+    const updateSpy = vi.spyOn(stableSnap.ref, 'update')
+
+    await onContactWrite.run(
+      firestoreWriteEvent('contacts/{contactId}', { contactId: id }, stableSnap, stableSnap),
+    )
+
+    expect(updateSpy).not.toHaveBeenCalled()
+    updateSpy.mockRestore()
+  })
+
+  it('skips recomputation when mergedInto is set on both before and after', async () => {
+    const id = 'contact-merged'
+    const ref = db.collection('contacts').doc(id)
+    const mergedData = {
+      firstName: 'Old',
+      lastName: 'Name',
+      ownerId: 'owner-1',
+      source: 'manual',
+      externalIds: { paciolanCustomerId: null },
+      mergedInto: 'some-other-contact',
+      duplicateReviewStatus: 'resolved',
+      possibleDuplicateOf: null,
+      // Deliberately wrong, so we can prove the trigger left it alone.
+      searchTokens: ['stale-token'],
+      nameLower: 'stale value',
+      createdAt: Timestamp.now(),
+      updatedAt: Timestamp.now(),
+      createdBy: 'owner-1',
+      importBatchId: null,
+    }
+    await ref.set(mergedData)
+    const before = await snapshotFor(id)
+    // Simulate an unrelated field touch while merged (still merged after).
+    await ref.update({ phone: '4015551234' })
+    const after = await snapshotFor(id)
+
+    await onContactWrite.run(
+      firestoreWriteEvent('contacts/{contactId}', { contactId: id }, before, after),
+    )
+
+    const result = (await snapshotFor(id)).data()!
+    expect(result.nameLower).toBe('stale value')
+    expect(result.searchTokens).toEqual(['stale-token'])
+  })
+})
