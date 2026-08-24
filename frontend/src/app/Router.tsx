@@ -19,8 +19,10 @@ export function AppRoutes() {
   return (
     <Routes>
       <Route path="/" element={<Navigate to="/contacts" replace />} />
-      <Route path="/contacts" element={<ContactsPage />} />
-      <Route path="/organizations" element={<OrganizationsPage />} />
+      {/* Each `*` route delegates to that feature's own nested <Routes>
+          (list/detail/add/edit) — see ContactsPage/OrganizationsPage. */}
+      <Route path="/contacts/*" element={<ContactsPage />} />
+      <Route path="/organizations/*" element={<OrganizationsPage />} />
       <Route path="/import" element={<ImportPage />} />
       <Route
         path="/users"

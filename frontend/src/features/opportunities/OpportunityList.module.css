@@ -1,0 +1,67 @@
+.section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.header h3 {
+  margin: 0;
+  font-family: var(--font-heading, var(--font-body));
+  font-size: var(--font-size-h4);
+}
+
+.empty {
+  margin: 0;
+  color: var(--gray-500);
+  font-size: var(--font-size-small);
+}
+
+.formCard {
+  background: var(--gray-50);
+}
+
+.list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.row {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding: var(--space-3);
+  border: 1px solid var(--gray-200);
+  border-radius: var(--radius-md);
+}
+
+.rowMain {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.sport {
+  font-weight: 700;
+  font-size: var(--font-size-small);
+}
+
+.contactLabel {
+  font-size: var(--font-size-caption);
+  color: var(--gray-500);
+}
+
+.note {
+  margin: 0;
+  font-size: var(--font-size-small);
+  color: var(--gray-700);
+}

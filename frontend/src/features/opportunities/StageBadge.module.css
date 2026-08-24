@@ -1,0 +1,85 @@
+/*
+ * Deliberately NOT a copy of Badge.module.css's filled pill: an
+ * opportunity's pipeline stage is a different kind of fact from a
+ * contact's relationship status, so it reads differently even when an
+ * admin picks the same semantic color for both — a bordered, square-ish
+ * "chip" with an accent bar, vs. the status badge's solid rounded pill.
+ * See approved design §8.
+ */
+.stageBadge {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-family: var(--font-caption);
+  font-size: var(--font-size-caption);
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  padding: 0.25em 0.7em 0.25em 0.55em;
+  border-radius: var(--radius-sm);
+  background: var(--brand-white);
+  border: 1px solid;
+}
+
+.dot {
+  width: 0.55em;
+  height: 0.55em;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.primary {
+  color: var(--color-primary-border);
+  border-color: var(--color-primary-border);
+}
+.primary .dot {
+  background: var(--color-primary-border);
+}
+
+.secondary {
+  color: var(--color-secondary-text);
+  border-color: var(--color-secondary-border);
+}
+.secondary .dot {
+  background: var(--gray-500);
+}
+
+.success {
+  color: var(--color-success-text);
+  border-color: var(--color-success-border);
+}
+.success .dot {
+  background: var(--color-success-text);
+}
+
+.warning {
+  color: var(--color-warning-text);
+  border-color: var(--color-warning-border);
+}
+.warning .dot {
+  background: var(--color-warning-text);
+}
+
+.info {
+  color: var(--color-info-text);
+  border-color: var(--color-info-border);
+}
+.info .dot {
+  background: var(--color-info-text);
+}
+
+.danger {
+  color: var(--color-danger-border);
+  border-color: var(--color-danger-border);
+}
+.danger .dot {
+  background: var(--color-danger-border);
+}
+
+.neutral {
+  color: var(--gray-600);
+  border-color: var(--gray-300);
+}
+.neutral .dot {
+  background: var(--gray-500);
+}

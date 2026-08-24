@@ -1,0 +1,33 @@
+.page {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.filters {
+  display: flex;
+  align-items: flex-end;
+  gap: var(--space-4);
+  flex-wrap: wrap;
+}
+
+.mineToggle {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-family: var(--font-caption);
+  font-size: var(--font-size-small);
+  font-weight: 700;
+  color: var(--gray-700);
+  padding-bottom: 0.6em;
+}
+
+.error {
+  color: var(--color-danger-text);
+}

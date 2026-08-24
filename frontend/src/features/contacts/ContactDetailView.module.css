@@ -1,0 +1,64 @@
+.page {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-4);
+}
+
+.name {
+  margin: 0 0 var(--space-2);
+}
+
+.metaLine {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+  margin-bottom: var(--space-2);
+}
+
+.muted {
+  color: var(--gray-500);
+  font-size: var(--font-size-small);
+}
+
+.contactInfo {
+  display: flex;
+  gap: var(--space-3);
+  font-size: var(--font-size-small);
+  color: var(--gray-700);
+  margin-bottom: var(--space-2);
+}
+
+.lastContact {
+  margin: 0;
+  font-size: var(--font-size-small);
+  color: var(--gray-600);
+}
+
+.primaryAction {
+  margin-top: var(--space-5);
+  padding-top: var(--space-4);
+  border-top: 1px solid var(--gray-200);
+}
+
+.logForm {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+.logForm input[type='date'] {
+  font-family: var(--font-body);
+  font-size: var(--font-size-small);
+  padding: 0.55em 0.75em;
+  border: 1px solid var(--gray-300);
+  border-radius: var(--radius-sm);
+}

@@ -23,3 +23,6 @@ pubsub-debug.log
 .vscode/*
 !.vscode/extensions.json
 .idea/
+
+# Local browser-preview tooling config (machine-specific, not part of the deliverable)
+.claude/launch.json

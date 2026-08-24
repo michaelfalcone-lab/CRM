@@ -1,0 +1,24 @@
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  max-width: 34rem;
+}
+
+.row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-4);
+}
+
+.actions {
+  display: flex;
+  gap: var(--space-2);
+}
+
+.formError {
+  margin: 0;
+  font-family: var(--font-caption);
+  font-size: var(--font-size-caption);
+  color: var(--color-danger-text);
+}
