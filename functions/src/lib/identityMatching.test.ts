@@ -55,6 +55,21 @@ describe('findIdentityMatch', () => {
     expect(result).toEqual({ tier: 1, id: 'c1' })
   })
 
+  it('Tier 1 is skipped when the row\'s "email" value is not email-shaped (no @), even if it matches an unrelated contact\'s name token', async () => {
+    // Simulates a mis-mapped CSV column: a "name" column accidentally
+    // mapped to the `email` target field. "Ada Lovelace" is a searchTokens
+    // member of c1 (its full-name token), but must never be treated as an
+    // email match.
+    await seedContact('c1', { firstName: 'Ada', lastName: 'Lovelace', email: 'ada@example.com' })
+
+    const result = await findIdentityMatch(
+      { firstName: 'Some', lastName: 'Importer', email: 'Ada Lovelace' },
+      { collection: 'contacts' },
+    )
+
+    expect(result).toBeNull()
+  })
+
   it('Tier 2: matches on digits-only phone when neither side has an email', async () => {
     await seedContact('c2', { firstName: 'Grace', lastName: 'Hopper', phone: '(401) 555-0100' })
 

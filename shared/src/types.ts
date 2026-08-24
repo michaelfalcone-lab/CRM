@@ -175,7 +175,19 @@ export interface Opportunity {
 }
 
 export type ImportBatchStatus =
-  'mapping' | 'previewing' | 'committed' | 'reverted' | 'partially_reverted' | 'failed'
+  | 'mapping'
+  | 'previewing'
+  /** Written before any row is processed, so the batch doc always exists
+   * before any contact tagged with its id can land durably in Firestore
+   * (see `commitImport.ts`). A batch left at this status means the
+   * function crashed/timed out mid-import — correctly non-revertable via
+   * `revertImportBatch` (which requires `status === 'committed'`), and
+   * still discoverable for manual cleanup. */
+  | 'in_progress'
+  | 'committed'
+  | 'reverted'
+  | 'partially_reverted'
+  | 'failed'
 
 export interface ImportBatchError {
   row: number

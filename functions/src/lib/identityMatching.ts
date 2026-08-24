@@ -11,7 +11,15 @@
  *   1. Exact email match — reads the target collection's `searchTokens`
  *      array (which always contains the doc's own lowercased email, see
  *      `lib/searchTokens.ts`), rather than requiring a separate
- *      case-normalized email field.
+ *      case-normalized email field. Only attempted when the row's email
+ *      value is actually email-shaped (contains `@`) — `searchTokens` also
+ *      contains name parts, the full name, the digits-only phone, and
+ *      org-name words, so a mis-mapped CSV column (e.g. a "name" column
+ *      accidentally mapped to the `email` target field) could otherwise
+ *      spuriously match on an unrelated contact's name token and silently
+ *      overwrite it. A non-email-shaped value is treated the same as "no
+ *      email supplied" for every tier below, so it correctly falls through
+ *      to Tier 2/3 instead.
  *   2. Digits-only phone match — only attempted when the row itself has no
  *      email, and only accepts a candidate that *also* has no email on
  *      record (a shared phone number, e.g. an office line, isn't evidence
@@ -52,6 +60,17 @@ export interface IdentityMatchResult {
 
 const TIER2_CANDIDATE_LIMIT = 10
 
+/** Normalizes a row's raw email value to its lowercased form for identity
+ * matching purposes — but only when it's actually email-shaped (contains
+ * `@`). A non-email-shaped value (e.g. a mis-mapped CSV column) is treated
+ * as "no email supplied" everywhere identity matching cares about email,
+ * both here and in `commitImport`'s in-import dedup (`lib/identityMatching`
+ * §1 above explains why). */
+export function normalizeEmailForMatching(email: string | null | undefined): string {
+  const trimmedLower = email?.trim().toLowerCase() ?? ''
+  return trimmedLower.includes('@') ? trimmedLower : ''
+}
+
 export async function findIdentityMatch(
   input: IdentityMatchInput,
   options: IdentityMatchOptions,
@@ -64,7 +83,7 @@ export async function findIdentityMatch(
   } = options
   const col = db.collection(collection)
 
-  const emailLower = input.email?.trim().toLowerCase() ?? ''
+  const emailLower = normalizeEmailForMatching(input.email)
   const phoneDigits = input.phone ? digitsOnly(input.phone) : ''
 
   // Tier 1: exact email match.

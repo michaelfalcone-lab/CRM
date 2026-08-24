@@ -6,7 +6,8 @@
  *  1. Resolves the row's organization by exact case-insensitive name
  *     lookup, creating a minimal `organizations` doc if none exists.
  *  2. Runs tiered identity matching (`lib/identityMatching.ts`) against
- *     `contacts`.
+ *     `contacts` — checking an in-import in-memory index first (see "Dedup
+ *     within a single import" below) before falling back to Firestore.
  *  3. Tier 1/2 match -> updates the existing contact, recording only the
  *     fields that actually changed in `previousValues` (plus `updatedAt`,
  *     which always changes on a touched row).
@@ -23,18 +24,53 @@
  * `createdAt` in this same operation. Two independent
  * `FieldValue.serverTimestamp()` sentinels resolve to two different
  * server-side instants even inside the same batch commit, so revert's
- * exact-timestamp equality check would never hold. Instead, each row gets
- * one concrete `Timestamp.now()` value (an Admin-SDK-clock timestamp, not a
- * server sentinel) that's written verbatim to both the contact and its row
- * doc — literally the same value, not two independently-resolved ones.
+ * exact-timestamp equality check would never hold. Instead, each affected
+ * contact gets one concrete `Timestamp.now()` value (an Admin-SDK-clock
+ * timestamp, not a server sentinel) that's written verbatim to both the
+ * contact and its row doc — literally the same value, not two independently
+ * resolved ones.
+ *
+ * Atomicity (fix round 1, finding 2): the `importBatches` doc is written
+ * FIRST — before any row is processed — as the very first op queued into
+ * `writer`, at `status: 'in_progress'`. `BatchWriter` flushes every 500 ops
+ * as one atomic Firestore commit, so this doc is always part of the SAME
+ * commit as the earliest contact writes; no contact tagged with this
+ * batch's id can ever land durably without the batch doc also existing. The
+ * doc is flipped to `status: 'committed'` (with final counts) as the very
+ * last write, once every row has been processed. A crash/timeout mid-import
+ * leaves the doc at `'in_progress'` — `revertImportBatch` requires
+ * `status === 'committed'`, so a partial import is correctly non-revertable
+ * via that path, and still discoverable for manual cleanup (rather than
+ * silently having no batch doc at all).
+ *
+ * Dedup within a single import (fix round 1, finding 3): all contact writes
+ * are deferred to a finalization pass over an in-memory `pending` map keyed
+ * by contact id, built up across the whole row loop, instead of writing
+ * each row's contact immediately. Three in-memory indices (email, phone,
+ * name — the same signals `identityMatching`'s tiers key on) are checked
+ * BEFORE falling back to a Firestore-backed `findIdentityMatch` query, so
+ * two rows in the same file that share a new identity always resolve to the
+ * same single contact regardless of where a 500-op batch flush happens to
+ * land — the previous, non-deferred version could otherwise produce two
+ * separate contacts, or one create + one update, non-deterministically. It
+ * also means each affected contact gets written (and counted, and given a
+ * `rows/{contactId}` doc) exactly once even when multiple rows in the file
+ * target it — later rows win on field values, but the recorded
+ * `previousValues` always anchors to the contact's true pre-import state,
+ * never an intermediate value written earlier in the same import. (Deferring
+ * writes to one pass is also required independent of dedup: a Firestore
+ * `WriteBatch` rejects more than one write to the same document within a
+ * single commit, so a contact touched by two rows could never safely be
+ * both `set()` and `update()` — or `update()` twice — in a write-as-you-go
+ * structure.)
  */
 import { HttpsError, onCall } from 'firebase-functions/v2/https'
-import { Timestamp } from 'firebase-admin/firestore'
-import type { Contact, LastContactMode, Organization } from 'shared'
+import { Timestamp, type DocumentReference } from 'firebase-admin/firestore'
+import type { Contact, ImportBatch, LastContactMode, Organization } from 'shared'
 import { db } from '../lib/firebaseAdmin'
 import { requireActiveUser } from '../lib/config'
-import { findIdentityMatch } from '../lib/identityMatching'
-import { computeContactSearchTokens, computeNameLower, computeOrgSearchTokens } from '../lib/searchTokens'
+import { findIdentityMatch, normalizeEmailForMatching, type IdentityMatchResult } from '../lib/identityMatching'
+import { computeContactSearchTokens, computeNameLower, computeOrgSearchTokens, digitsOnly } from '../lib/searchTokens'
 import { BatchWriter } from '../lib/batchWriter'
 
 export interface CommitImportRow {
@@ -198,6 +234,40 @@ function diffAndBuildUpdate(
   return { updates, previousValues: previousValues as Partial<Contact> }
 }
 
+/** Applies a cumulative `updates` object on top of a base `Contact`
+ * snapshot, so a later row in the same import can be diffed against the
+ * contact's current (not-yet-written) in-memory state rather than its
+ * original pre-import Firestore snapshot. */
+function applyPendingUpdates(base: Contact, updates: Record<string, unknown>): Contact {
+  return { ...base, ...updates } as Contact
+}
+
+interface PendingCreate {
+  kind: 'create'
+  ref: DocumentReference
+  data: Record<string, unknown>
+  isDuplicate: boolean
+  writtenAt: Timestamp
+}
+
+interface PendingUpdate {
+  kind: 'update'
+  ref: DocumentReference
+  /** The contact's true pre-import Firestore snapshot — never mutated, so
+   * `previousValues` can always be anchored to it regardless of how many
+   * rows in this import touch the contact. */
+  original: Contact
+  /** Cumulative field updates across every row in this import that touched
+   * this contact — last row wins per field. */
+  updates: Record<string, unknown>
+  /** Cumulative previous-values across every row — a field is recorded
+   * here only the first time it changes relative to `original`. */
+  previousValues: Record<string, unknown>
+  writtenAt: Timestamp
+}
+
+type PendingContact = PendingCreate | PendingUpdate
+
 export const commitImport = onCall<CommitImportData>(async (request) => {
   const caller = await requireActiveUser(request.auth)
 
@@ -215,13 +285,63 @@ export const commitImport = onCall<CommitImportData>(async (request) => {
   const defaultStatus = data.defaultStatus?.trim() || undefined
 
   const batchRef = db.collection('importBatches').doc()
+  const rowsCollection = batchRef.collection('rows')
   const writer = new BatchWriter()
   const orgCache = new Map<string, OrgResolution>()
 
-  let createdCount = 0
-  let updatedCount = 0
-  let possibleDuplicateCount = 0
+  // Written first — see the "Atomicity" doc comment at the top of this
+  // file. Placeholder counts get overwritten by the final `status:
+  // 'committed'` write below.
+  await writer.set(batchRef, {
+    fileName: data.fileName,
+    uploadedBy: caller.uid,
+    uploadedAt: Timestamp.now(),
+    status: 'in_progress',
+    columnMapping: data.columnMapping ?? {},
+    rowCount: data.rows.length,
+    createdCount: 0,
+    updatedCount: 0,
+    errorCount: 0,
+    possibleDuplicateCount: 0,
+    errors: [],
+    revertedAt: null,
+    revertSummary: null,
+  } satisfies ImportBatch)
+
   const errors: CommitImportRowError[] = []
+
+  // In-import dedup state — see the "Dedup within a single import" doc
+  // comment at the top of this file.
+  const pending = new Map<string, PendingContact>()
+  const localEmailIndex = new Map<string, string>() // emailLower -> contactId
+  const localPhoneIndex = new Map<string, string>() // phoneDigits -> contactId (only entries whose row had no email)
+  const localNameIndex = new Map<string, string>() // nameLower -> contactId
+
+  const findLocalMatch = (
+    emailLower: string,
+    phoneDigits: string,
+    nameLower: string,
+  ): IdentityMatchResult | null => {
+    if (emailLower) {
+      const id = localEmailIndex.get(emailLower)
+      if (id) return { tier: 1, id }
+    }
+    if (!emailLower && phoneDigits) {
+      const id = localPhoneIndex.get(phoneDigits)
+      if (id) return { tier: 2, id }
+    }
+    if (nameLower) {
+      const id = localNameIndex.get(nameLower)
+      if (id) return { tier: 3, id }
+    }
+    return null
+  }
+
+  const registerLocalIndices = (id: string, emailLower: string, phoneDigits: string, nameLower: string): void => {
+    if (emailLower) localEmailIndex.set(emailLower, id)
+    else if (phoneDigits) localPhoneIndex.set(phoneDigits, id)
+    if (nameLower) localNameIndex.set(nameLower, id)
+  }
 
   for (let rowIndex = 0; rowIndex < data.rows.length; rowIndex += 1) {
     const row = data.rows[rowIndex]!
@@ -245,30 +365,24 @@ export const commitImport = onCall<CommitImportData>(async (request) => {
       org = await resolveOrganization(orgNameRaw, orgCache, defaultOwnerId, caller.uid, writer)
     }
 
-    const match = await findIdentityMatch(
-      {
-        email: emailRaw || undefined,
-        phone: phoneRaw || undefined,
-        firstName: firstNameRaw,
-        lastName: lastNameRaw,
-      },
-      { collection: 'contacts' },
-    )
+    const emailLower = normalizeEmailForMatching(emailRaw)
+    const phoneDigits = phoneRaw ? digitsOnly(phoneRaw) : ''
+    const nameLower = computeNameLower(firstNameRaw, lastNameRaw)
 
-    const writtenAt = Timestamp.now()
-    const rowsCollection = batchRef.collection('rows')
+    let match: IdentityMatchResult | null = findLocalMatch(emailLower, phoneDigits, nameLower)
+    if (!match) {
+      match = await findIdentityMatch(
+        {
+          email: emailRaw || undefined,
+          phone: phoneRaw || undefined,
+          firstName: firstNameRaw,
+          lastName: lastNameRaw,
+        },
+        { collection: 'contacts' },
+      )
+    }
 
     if (match && match.tier !== 3) {
-      const contactRef = db.collection('contacts').doc(match.id)
-      const existingSnap = await contactRef.get()
-      if (!existingSnap.exists) {
-        // Matched doc vanished between the query and this read — extremely
-        // unlikely, but fail this row loudly rather than writing garbage.
-        errors.push({ row: rowIndex, message: `Matched contact ${match.id} no longer exists.` })
-        continue
-      }
-      const existing = existingSnap.data() as Contact
-
       const incoming: IncomingFields = {
         firstName: firstNameRaw || undefined,
         lastName: lastNameRaw || undefined,
@@ -280,20 +394,75 @@ export const commitImport = onCall<CommitImportData>(async (request) => {
         lastContactDate: lastContactDateTs,
         lastContactMode,
       }
-      const { updates, previousValues } = diffAndBuildUpdate(existing, incoming)
-      updates.updatedAt = writtenAt
-      previousValues.updatedAt = existing.updatedAt
 
-      await writer.update(contactRef, updates)
-      await writer.set(rowsCollection.doc(contactRef.id), {
-        action: 'updated',
-        previousValues,
-        writtenAt,
-      })
-      updatedCount += 1
+      const existingPending = pending.get(match.id)
+
+      if (existingPending && existingPending.kind === 'create') {
+        // Contact was created earlier in this same import — merge this
+        // row's fields directly into the still-unwritten create payload
+        // (last row wins). There's nothing to "revert" beyond the single
+        // create either way, so no previousValues bookkeeping is needed.
+        const mergedData = existingPending.data
+        if (incoming.firstName !== undefined) mergedData.firstName = incoming.firstName
+        if (incoming.lastName !== undefined) mergedData.lastName = incoming.lastName
+        if (incoming.email !== undefined) mergedData.email = incoming.email
+        if (incoming.phone !== undefined) mergedData.phone = incoming.phone
+        if (incoming.organizationId !== undefined) mergedData.organizationId = incoming.organizationId
+        if (incoming.organizationName !== undefined) mergedData.organizationName = incoming.organizationName
+        if (incoming.status !== undefined) mergedData.status = incoming.status
+        if (incoming.lastContactDate !== undefined) mergedData.lastContactDate = incoming.lastContactDate
+        if (incoming.lastContactMode !== undefined) mergedData.lastContactMode = incoming.lastContactMode
+        const mergedFirstName = (mergedData.firstName as string | undefined) ?? ''
+        const mergedLastName = (mergedData.lastName as string | undefined) ?? ''
+        mergedData.nameLower = computeNameLower(mergedFirstName, mergedLastName)
+        mergedData.searchTokens = computeContactSearchTokens({
+          firstName: mergedFirstName,
+          lastName: mergedLastName,
+          email: mergedData.email as string | undefined,
+          phone: mergedData.phone as string | undefined,
+          organizationName: mergedData.organizationName as string | undefined,
+        })
+      } else if (existingPending && existingPending.kind === 'update') {
+        const current = applyPendingUpdates(existingPending.original, existingPending.updates)
+        const { updates: newUpdates, previousValues: newPrev } = diffAndBuildUpdate(current, incoming)
+        Object.assign(existingPending.updates, newUpdates)
+        for (const [key, value] of Object.entries(newPrev)) {
+          if (!(key in existingPending.previousValues)) existingPending.previousValues[key] = value
+        }
+      } else {
+        // First time this import has touched this contact — a fresh local
+        // match always has a `pending` entry already (that's how it got
+        // indexed), so reaching here means the match came from Firestore:
+        // a genuine pre-existing record.
+        const contactRef = db.collection('contacts').doc(match.id)
+        const existingSnap = await contactRef.get()
+        if (!existingSnap.exists) {
+          // Matched doc vanished between the query and this read —
+          // extremely unlikely, but fail this row loudly rather than
+          // writing garbage.
+          errors.push({ row: rowIndex, message: `Matched contact ${match.id} no longer exists.` })
+          continue
+        }
+        const existing = existingSnap.data() as Contact
+        const writtenAt = Timestamp.now()
+        const { updates, previousValues } = diffAndBuildUpdate(existing, incoming)
+        updates.updatedAt = writtenAt
+        previousValues.updatedAt = existing.updatedAt
+        pending.set(match.id, {
+          kind: 'update',
+          ref: contactRef,
+          original: existing,
+          updates,
+          previousValues,
+          writtenAt,
+        })
+      }
+
+      registerLocalIndices(match.id, emailLower, phoneDigits, nameLower)
     } else {
       const isDuplicate = match?.tier === 3
       const contactRef = db.collection('contacts').doc()
+      const writtenAt = Timestamp.now()
 
       const contactData: Record<string, unknown> = {
         firstName: firstNameRaw,
@@ -309,7 +478,7 @@ export const commitImport = onCall<CommitImportData>(async (request) => {
         mergedInto: null,
         duplicateReviewStatus: isDuplicate ? 'flagged' : null,
         possibleDuplicateOf: isDuplicate ? match!.id : null,
-        nameLower: computeNameLower(firstNameRaw, lastNameRaw),
+        nameLower,
         searchTokens: computeContactSearchTokens({
           firstName: firstNameRaw,
           lastName: lastNameRaw,
@@ -330,33 +499,54 @@ export const commitImport = onCall<CommitImportData>(async (request) => {
       if (lastContactDateTs) contactData.lastContactDate = lastContactDateTs
       if (lastContactMode) contactData.lastContactMode = lastContactMode
 
-      await writer.set(contactRef, contactData)
-      await writer.set(rowsCollection.doc(contactRef.id), {
-        action: 'created',
-        previousValues: {},
+      pending.set(contactRef.id, {
+        kind: 'create',
+        ref: contactRef,
+        data: contactData,
+        isDuplicate,
         writtenAt,
       })
+
+      registerLocalIndices(contactRef.id, emailLower, phoneDigits, nameLower)
+    }
+  }
+
+  let createdCount = 0
+  let updatedCount = 0
+  let possibleDuplicateCount = 0
+
+  for (const [contactId, entry] of pending) {
+    if (entry.kind === 'create') {
+      await writer.set(entry.ref, entry.data)
+      await writer.set(rowsCollection.doc(contactId), {
+        action: 'created',
+        previousValues: {},
+        writtenAt: entry.writtenAt,
+      })
       createdCount += 1
-      if (isDuplicate) possibleDuplicateCount += 1
+      if (entry.isDuplicate) possibleDuplicateCount += 1
+    } else {
+      await writer.update(entry.ref, entry.updates)
+      await writer.set(rowsCollection.doc(contactId), {
+        action: 'updated',
+        previousValues: entry.previousValues,
+        writtenAt: entry.writtenAt,
+      })
+      updatedCount += 1
     }
   }
 
   const reportedErrors = errors.slice(0, MAX_REPORTED_ERRORS)
-  await writer.set(batchRef, {
-    fileName: data.fileName,
-    uploadedBy: caller.uid,
-    uploadedAt: Timestamp.now(),
+  // Last write: flips the batch doc from 'in_progress' to 'committed' with
+  // final counts — see the "Atomicity" doc comment at the top of this file.
+  await writer.update(batchRef, {
     status: 'committed',
-    columnMapping: data.columnMapping ?? {},
-    rowCount: data.rows.length,
     createdCount,
     updatedCount,
     errorCount: errors.length,
     possibleDuplicateCount,
     errors: reportedErrors,
     committedAt: Timestamp.now(),
-    revertedAt: null,
-    revertSummary: null,
   })
   await writer.commit()
 

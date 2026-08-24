@@ -2,12 +2,13 @@
  * Unit tests for `commitImport`, run against the Firestore Local Emulator
  * Suite via `npm run test:functions`.
  */
-import { beforeEach, describe, expect, it } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { Timestamp } from 'firebase-admin/firestore'
-import type { Contact, Organization, User } from 'shared'
+import type { Contact, ImportBatch, Organization, User } from 'shared'
 import { db } from '../lib/firebaseAdmin'
 import { callableRequest, fakeAuth } from '../lib/testSupport'
 import { computeContactSearchTokens, computeNameLower } from '../lib/searchTokens'
+import { BatchWriter } from '../lib/batchWriter'
 import { commitImport, type CommitImportData } from './commitImport'
 
 const CALLER_UID = 'rep-uid-import'
@@ -147,6 +148,41 @@ describe('commitImport', () => {
     expect(row.previousValues.phone).toBeNull()
     expect(row.previousValues.status).toBe('New Lead')
     expect((contact.updatedAt as unknown as Timestamp).isEqual(row.writtenAt as Timestamp)).toBe(true)
+
+    // The "only changed fields" claim, actually tested: firstName/lastName
+    // were supplied identically to what was already stored and must be
+    // ABSENT from previousValues, not just correctly-valued for the fields
+    // that did change. (email changes too here because the row's casing
+    // differs from what's stored — a separate, out-of-scope minor finding
+    // about Tier-1 mutating email casing — so it's included below as a
+    // genuinely-changed field, not asserted away.)
+    expect(Object.keys(row.previousValues).sort()).toEqual(['email', 'phone', 'status', 'updatedAt'])
+  })
+
+  it('a non-email-shaped "email" value (e.g. a mis-mapped CSV column) never matches an existing contact via Tier 1, and creates a new contact instead', async () => {
+    await seedContact('existing-ada', {
+      firstName: 'Ada',
+      lastName: 'Lovelace',
+      email: 'ada@example.com',
+      status: 'New Lead',
+    })
+
+    const result = await runCommitImport({
+      fileName: 'bad-column-mapping.csv',
+      defaultOwnerId: DEFAULT_OWNER_ID,
+      // "email" here is actually a name column that was mis-mapped — its
+      // value happens to be a searchTokens member of the seeded contact
+      // above (its full-name token), but must not match on that basis.
+      rows: [{ firstName: 'Someone', lastName: 'Else', email: 'Ada Lovelace' }],
+    })
+
+    expect(result.createdCount).toBe(1)
+    expect(result.updatedCount).toBe(0)
+
+    // The seeded contact must be completely untouched.
+    const existing = (await db.collection('contacts').doc('existing-ada').get()).data() as Contact
+    expect(existing.status).toBe('New Lead')
+    expect(existing.firstName).toBe('Ada')
   })
 
   it('Tier 2 (digits-only phone, no email on either side) match updates the existing contact', async () => {
@@ -311,5 +347,109 @@ describe('commitImport', () => {
 
     const newSnap = await db.collection('contacts').where('email', '==', 'new-person-2@example.com').get()
     expect((newSnap.docs[0]!.data() as Contact).status).toBe('New Lead')
+  })
+
+  it('writes the importBatches doc as status "in_progress" before any contact/row write, and flips it to "committed" only as the final write (atomicity fix)', async () => {
+    const setSpy = vi.spyOn(BatchWriter.prototype, 'set')
+    const updateSpy = vi.spyOn(BatchWriter.prototype, 'update')
+
+    const result = await runCommitImport({
+      fileName: 'atomicity.csv',
+      defaultOwnerId: DEFAULT_OWNER_ID,
+      rows: [
+        { firstName: 'First', lastName: 'Row', email: 'first-row@example.com' },
+        { firstName: 'Second', lastName: 'Row', email: 'second-row@example.com' },
+      ],
+    })
+
+    // The very first BatchWriter op queued in the whole call must be the
+    // importBatches doc itself, at status 'in_progress' — queued before any
+    // contact or row doc. `BatchWriter` flushes every 500 ops as one atomic
+    // Firestore commit, so being first here guarantees the batch doc is
+    // always part of the same commit as the earliest contact writes: no
+    // contact tagged with this batch's id can ever land durably without
+    // the batch doc also existing.
+    const firstSetCall = setSpy.mock.calls[0] as [{ path: string }, Record<string, unknown>]
+    expect(firstSetCall[0].path).toBe(`importBatches/${result.importBatchId}`)
+    expect(firstSetCall[1].status).toBe('in_progress')
+
+    // The batch doc's status is flipped to 'committed' via exactly one
+    // `update` call (never re-`set`), after every contact write for this
+    // import has already been queued.
+    const batchUpdateCalls = updateSpy.mock.calls.filter(
+      (call) => (call[0] as { path: string }).path === `importBatches/${result.importBatchId}`,
+    )
+    expect(batchUpdateCalls).toHaveLength(1)
+    expect((batchUpdateCalls[0]![1] as Record<string, unknown>).status).toBe('committed')
+
+    setSpy.mockRestore()
+    updateSpy.mockRestore()
+
+    const batchDoc = await db.collection('importBatches').doc(result.importBatchId).get()
+    expect(batchDoc.exists).toBe(true)
+    const batchData = batchDoc.data() as ImportBatch
+    expect(batchData.status).toBe('committed')
+    expect(batchData.createdCount).toBe(2)
+    expect(batchData.rowCount).toBe(2)
+  })
+
+  it('two rows in the same import sharing a new email dedup to exactly one contact, with the last row winning on field values', async () => {
+    const result = await runCommitImport({
+      fileName: 'dup-new.csv',
+      defaultOwnerId: DEFAULT_OWNER_ID,
+      rows: [
+        { firstName: 'First', lastName: 'Pass', email: 'shared-new@example.com', status: 'New Lead' },
+        { firstName: 'Second', lastName: 'Pass', email: 'SHARED-NEW@example.com', status: 'Active' },
+      ],
+    })
+
+    // Without in-import dedup, this could non-deterministically become two
+    // separate contacts (or one create + one update) depending on where a
+    // 500-op batch flush happened to land relative to the two rows.
+    expect(result.createdCount).toBe(1)
+    expect(result.updatedCount).toBe(0)
+
+    const contactsSnap = await db.collection('contacts').get()
+    expect(contactsSnap.size).toBe(1)
+    const contact = contactsSnap.docs[0]!.data() as Contact
+    expect(contact.firstName).toBe('Second') // last row in file order wins
+    expect(contact.status).toBe('Active')
+
+    const rowsSnap = await db.collection('importBatches').doc(result.importBatchId).collection('rows').get()
+    expect(rowsSnap.size).toBe(1) // exactly one row doc, not two
+  })
+
+  it('two rows in the same import that both match the same pre-existing contact produce exactly one update, one row doc, and previousValues anchored to the true pre-import state', async () => {
+    await seedContact('existing-dup', {
+      firstName: 'Original',
+      lastName: 'Person',
+      email: 'dup-existing@example.com',
+      status: 'New Lead',
+    })
+
+    const result = await runCommitImport({
+      fileName: 'dup-existing.csv',
+      defaultOwnerId: DEFAULT_OWNER_ID,
+      rows: [
+        { firstName: 'Original', lastName: 'Person', email: 'dup-existing@example.com', status: 'Active' },
+        { firstName: 'Original', lastName: 'Person', email: 'dup-existing@example.com', phone: '4015550199' },
+      ],
+    })
+
+    expect(result.updatedCount).toBe(1) // not 2, even though 2 rows touched it
+    expect(result.createdCount).toBe(0)
+
+    const contact = (await db.collection('contacts').doc('existing-dup').get()).data() as Contact
+    expect(contact.status).toBe('Active') // set by row 1
+    expect(contact.phone).toBe('4015550199') // set by row 2
+
+    const rowsSnap = await db.collection('importBatches').doc(result.importBatchId).collection('rows').get()
+    expect(rowsSnap.size).toBe(1) // exactly one row doc, not two
+    const row = rowsSnap.docs[0]!.data()
+    expect(row.action).toBe('updated')
+    // previousValues must reflect the contact's TRUE pre-import state, not
+    // an intermediate value written by row 1 earlier in this same import.
+    expect(row.previousValues.status).toBe('New Lead')
+    expect(row.previousValues.phone).toBeNull()
   })
 })
