@@ -78,9 +78,15 @@ describe('useOrganizationSearch', () => {
 
     // Assert the actual where(...) call arguments to pin the fix: the upper
     // bound must be the lower bound plus the high-codepoint terminator, not
-    // the lower bound unchanged.
+    // the lower bound unchanged. Built via String.fromCharCode rather than a
+    // literal/escaped string constant in this source file: the private-use
+    // terminator character has repeatedly been silently substituted or
+    // dropped by tool pipelines when typed literally (including in an
+    // earlier version of this very test) -- fromCharCode has no such failure
+    // mode, since no special character is ever embedded in source text.
+    const prefixTerminator = String.fromCharCode(0xf8ff)
     expect(whereMock).toHaveBeenCalledWith('nameLower', '>=', 'acme')
-    expect(whereMock).toHaveBeenCalledWith('nameLower', '<=', 'acme')
+    expect(whereMock).toHaveBeenCalledWith('nameLower', '<=', 'acme' + prefixTerminator)
     expect(whereMock).not.toHaveBeenCalledWith('nameLower', '<=', 'acme')
   })
 })
