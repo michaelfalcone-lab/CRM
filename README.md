@@ -51,7 +51,38 @@ firebase emulators:start --only firestore,auth,functions
 
 - `npm run build --workspace=shared` — type-check and compile the shared types package
 - `npm run dev --workspace=frontend` — start the Vite dev server directly
+- `npm run test --workspace=frontend` — run the frontend's Vitest + React Testing Library
+  component tests (pure jsdom, no emulator needed)
 - `npm run build --workspace=functions` — compile Cloud Functions to `functions/lib`
+
+## Frontend environment variables
+
+`/frontend/src/lib/firebase.ts` reads the Firebase client SDK config from Vite env vars.
+Copy `frontend/.env.example` to `frontend/.env.local` (git-ignored) and fill in your
+Firebase project's Web app config (Firebase Console → Project settings → General → Your
+apps → SDK setup and configuration → Config):
+
+- `VITE_FIREBASE_API_KEY`
+- `VITE_FIREBASE_AUTH_DOMAIN`
+- `VITE_FIREBASE_PROJECT_ID`
+- `VITE_FIREBASE_STORAGE_BUCKET`
+- `VITE_FIREBASE_MESSAGING_SENDER_ID`
+- `VITE_FIREBASE_APP_ID`
+- `VITE_USE_FIREBASE_EMULATOR` (optional) — set to `"false"` to point a local `npm run dev`
+  at a real Firebase project instead of the Local Emulator Suite. Any other value (or
+  unset) uses the emulator whenever Vite is in dev mode; a production `vite build` never
+  wires up the emulator regardless of this variable.
+
+When running against the Local Emulator Suite, these can be any non-empty placeholder
+values — the emulator doesn't validate them.
+
+## Brand assets
+
+`/frontend/src/styles/tokens.css` and `/frontend/public/fonts/` hold the Brown Athletics
+brand colors, type scale, and licensed font files (Heron Serif, Ibis Display, Scout
+Text), sourced from the `anthropic-skills:brown-athletics-brand` skill's bundled assets.
+See that skill for the full brand guidelines (colors, typography, logo usage) before
+adding any new brand-styled UI.
 
 ## Status
 

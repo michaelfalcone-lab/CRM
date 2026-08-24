@@ -1,0 +1,198 @@
+/* ==========================================================================
+   Brown Athletics CRM — design tokens.
+
+   Brand colors, font faces, and the type scale are sourced verbatim from
+   the `anthropic-skills:brown-athletics-brand` skill's bundled
+   `assets/brown-athletics.css` (June 2022 Brand Guidelines) — see that
+   skill for the full brand rules. Three brand colors only (`--brand-brown`,
+   `--brand-red`, `--brand-white`); everything else here (gray scale,
+   semantic tokens) is CRM-specific UI chrome, not part of the official
+   three-color brand palette, and is never a tint/shade of a brand color.
+
+   Font files live in /frontend/public/fonts/ (served at /fonts/*.otf by
+   Vite) — copied from the skill's assets/fonts/. Only the three faces this
+   app actually uses are included: Heron Serif (headings), Ibis Display
+   (body), Scout Text (captions). Brown Bears (display/jersey face) isn't
+   used — this is a data-entry business app, not marketing collateral.
+   ========================================================================== */
+
+/* --------------------------------------------------------------------------
+   @font-face — collapses the supplied one-style-per-file fonts into three
+   families with real weight/style axes, so `font-weight: 600` picks the
+   true SemiBold cut instead of a synthetic bold. Mirrors the skill's
+   brown-athletics.css font-face block exactly.
+   -------------------------------------------------------------------------- */
+
+@font-face {
+  font-family: 'Heron Serif';
+  src: url('/fonts/Heron_Serif_Regular.otf') format('opentype');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Heron Serif';
+  src: url('/fonts/Heron_Serif_Italic.otf') format('opentype');
+  font-weight: 400;
+  font-style: italic;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Heron Serif';
+  src: url('/fonts/Heron_Serif_Semi_Bold.otf') format('opentype');
+  font-weight: 600;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Heron Serif';
+  src: url('/fonts/Heron_Serif_Semi_Bold_Italic.otf') format('opentype');
+  font-weight: 600;
+  font-style: italic;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Ibis Display';
+  src: url('/fonts/Ibis_Display_Regular.otf') format('opentype');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Ibis Display';
+  src: url('/fonts/Ibis_Display_Italic.otf') format('opentype');
+  font-weight: 400;
+  font-style: italic;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Ibis Display';
+  src: url('/fonts/Ibis_Display_Semi_Bold.otf') format('opentype');
+  font-weight: 600;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Ibis Display';
+  src: url('/fonts/Ibis_Display_Semi_Bold_Italic.otf') format('opentype');
+  font-weight: 600;
+  font-style: italic;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Scout Text';
+  src: url('/fonts/Scout_Text_Regular.otf') format('opentype');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Scout Text';
+  src: url('/fonts/Scout_Text_Regular_Italic.otf') format('opentype');
+  font-weight: 400;
+  font-style: italic;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Scout Text';
+  src: url('/fonts/Scout_Text_Bold.otf') format('opentype');
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Scout Text';
+  src: url('/fonts/Scout_Text_Bold_Italic.otf') format('opentype');
+  font-weight: 700;
+  font-style: italic;
+  font-display: swap;
+}
+
+:root {
+  /* ---- Brand palette (exact, per the June 2022 guide — never tinted,
+         lightened, darkened, or gradiented) ---- */
+  --brand-brown: #4e3629;
+  --brand-red: #c00404;
+  --brand-white: #ffffff;
+
+  /* ---- Neutral gray scale. Not part of the 3-color brand palette — UI
+         chrome only (borders, disabled states, dense-table stripes). ---- */
+  --gray-50: #f9fafb;
+  --gray-100: #f3f4f6;
+  --gray-200: #e5e7eb;
+  --gray-300: #d1d5db;
+  --gray-400: #9ca3af;
+  --gray-500: #6b7280;
+  --gray-600: #4b5563;
+  --gray-700: #374151;
+  --gray-800: #1f2937;
+  --gray-900: #111827;
+
+  /* ---- Semantic tokens. Each has a background/text/border triad.
+         `primary`/`secondary`/`danger` map onto the brand palette (danger
+         reuses brand red at full opacity, never a tint of it, per the
+         guide's "always 100% tint" rule). The functional ones
+         (success/warning/info) are muted, not neon, and are not shades of
+         a brand color since the guide prohibits tinting brand hex values —
+         they're a separate, documented off-brand set. `neutral` is gray. */
+  --color-primary-bg: var(--brand-brown);
+  --color-primary-text: var(--brand-white);
+  --color-primary-border: var(--brand-brown);
+
+  --color-secondary-bg: var(--gray-100);
+  --color-secondary-text: var(--gray-800);
+  --color-secondary-border: var(--gray-300);
+
+  --color-danger-bg: var(--brand-red);
+  --color-danger-text: var(--brand-white);
+  --color-danger-border: var(--brand-red);
+
+  --color-success-bg: #eaf6ec;
+  --color-success-text: #1e5631;
+  --color-success-border: #a8d5b5;
+
+  --color-warning-bg: #fdf3e0;
+  --color-warning-text: #7a5210;
+  --color-warning-border: #f0d28a;
+
+  --color-info-bg: #e8f1fb;
+  --color-info-text: #1b4a72;
+  --color-info-border: #a9c8e8;
+
+  --color-neutral-bg: var(--gray-100);
+  --color-neutral-text: var(--gray-700);
+  --color-neutral-border: var(--gray-300);
+
+  /* ---- Type families ---- */
+  --font-heading: 'Heron Serif', Georgia, 'Times New Roman', serif;
+  --font-body: 'Ibis Display', Georgia, 'Times New Roman', serif;
+  --font-caption: 'Scout Text', 'Helvetica Neue', Arial, sans-serif;
+
+  /* ---- Type scale, mapped to the guide's stated size ranges. Ibis Display
+         is a DISPLAY cut (not the Ibis Text the guide specifies for body at
+         9-12pt) — set larger and looser or the hairlines grey out. ---- */
+  --font-size-h1: 2.25rem; /* 36px */
+  --font-size-h2: 1.75rem; /* 28px */
+  --font-size-h3: 1.125rem; /* 18px — Heron Serif SemiBold */
+  --font-size-h4: 0.9375rem; /* 15px */
+  --font-size-body: 1.0625rem; /* 17px */
+  --font-size-small: 0.875rem; /* 14px */
+  --font-size-caption: 0.75rem; /* 12px — Scout Text */
+
+  --line-height-heading: 1.25;
+  --line-height-body: 1.6;
+
+  /* ---- Spacing + radius. Hard edges echo the marks, but a business app's
+         dense tables/forms read better with a touch of radius than the
+         brand guide's poster-oriented radius: 0. ---- */
+  --space-1: 0.25rem;
+  --space-2: 0.5rem;
+  --space-3: 0.75rem;
+  --space-4: 1rem;
+  --space-5: 1.5rem;
+  --space-6: 2rem;
+  --radius-sm: 4px;
+  --radius-md: 6px;
+}

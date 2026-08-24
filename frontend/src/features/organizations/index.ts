@@ -1,1 +1,1 @@
-export {}
+export { OrganizationsPage } from './OrganizationsPage'

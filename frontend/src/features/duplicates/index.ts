@@ -1,1 +1,1 @@
-export {}
+export { DuplicatesPage } from './DuplicatesPage'

@@ -1,1 +1,1 @@
-export {}
+export { OpportunityStagesPage } from './OpportunityStagesPage'

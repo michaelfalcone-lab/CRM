@@ -1,9 +1,19 @@
+import { BrowserRouter } from 'react-router-dom'
+import { AuthProvider } from './app/AuthProvider'
+import { AppShell } from './app/AppShell'
+
+/**
+ * `AuthProvider` renders `AppShell` only once a signed-in user is linked
+ * and active (`status === 'ready'`) — otherwise it renders the loading /
+ * sign-in / not-invited screen in its place.
+ */
 function App() {
   return (
-    <main>
-      <h1>Brown Athletics CRM</h1>
-      <p>Placeholder shell — real content lands in later Phase 1 tasks.</p>
-    </main>
+    <BrowserRouter>
+      <AuthProvider>
+        <AppShell />
+      </AuthProvider>
+    </BrowserRouter>
   )
 }
 

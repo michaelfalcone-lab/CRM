@@ -5,6 +5,7 @@
  */
 import { HttpsError, onCall } from 'firebase-functions/v2/https'
 import { FieldValue } from 'firebase-admin/firestore'
+import { NOT_INVITED_REASON } from 'shared'
 import type { User } from 'shared'
 import { db } from '../lib/firebaseAdmin'
 import { toEmailLower } from '../lib/config'
@@ -14,16 +15,17 @@ import { toEmailLower } from '../lib/config'
  * enum (see firebase-functions), which has no "not-invited" value. The
  * client-distinguishable reason therefore lives in `details.reason` — the
  * frontend should check `error.details?.reason === NOT_INVITED_REASON`
- * rather than parsing the human-readable message.
+ * rather than parsing the human-readable message. The constant itself
+ * lives in `shared` (not duplicated here) so `/frontend` and `/functions`
+ * can't drift apart on the literal; re-exported so existing imports of
+ * `NOT_INVITED_REASON` from this module keep working.
  */
-export const NOT_INVITED_REASON = 'not-invited'
+export { NOT_INVITED_REASON }
 
 function notInvitedError(): HttpsError {
-  return new HttpsError(
-    'permission-denied',
-    'No active invitation was found for this email.',
-    { reason: NOT_INVITED_REASON },
-  )
+  return new HttpsError('permission-denied', 'No active invitation was found for this email.', {
+    reason: NOT_INVITED_REASON,
+  })
 }
 
 export const linkAccount = onCall(async (request) => {

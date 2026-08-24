@@ -1,0 +1,54 @@
+/* Shared full-screen layout for the loading / sign-in / not-invited screens
+   AuthProvider renders in place of the app whenever status !== 'ready'.
+   Brand-white background (brown dominates via the wordmark + accent rule +
+   primary button, not as a page-filling surface here) so the primary
+   button (brand-brown bg) reads clearly against it. */
+
+.screen {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-4);
+  padding: var(--space-6);
+  background: var(--brand-white);
+  color: var(--gray-900);
+  text-align: center;
+}
+
+.wordmark {
+  font-family: var(--font-heading);
+  font-size: var(--font-size-h1);
+  color: var(--brand-brown);
+  margin: 0;
+}
+
+.subtitle {
+  font-family: var(--font-caption);
+  font-size: var(--font-size-small);
+  color: var(--gray-600);
+  margin: 0;
+  max-width: 22rem;
+}
+
+.caption {
+  font-family: var(--font-caption);
+  font-size: var(--font-size-small);
+  color: var(--gray-600);
+  margin: 0;
+}
+
+.error {
+  font-family: var(--font-caption);
+  font-size: var(--font-size-small);
+  color: var(--brand-red);
+  margin: 0;
+}
+
+.accentRule {
+  border: 0;
+  border-top: 3px solid var(--brand-red);
+  width: 3rem;
+  margin: 0;
+}

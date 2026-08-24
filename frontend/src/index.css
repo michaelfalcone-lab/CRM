@@ -1,8 +1,68 @@
+@import './styles/tokens.css';
+
 :root {
-  color-scheme: light dark;
+  color-scheme: light;
+}
+
+* {
+  box-sizing: border-box;
 }
 
 body {
   margin: 0;
-  font-family: system-ui, sans-serif;
+  font-family: var(--font-body);
+  font-size: var(--font-size-body);
+  line-height: var(--line-height-body);
+  color: var(--gray-900);
+  background: var(--brand-white);
+}
+
+h1,
+h2,
+h3,
+h4,
+h5,
+h6 {
+  font-family: var(--font-heading);
+  color: var(--brand-brown);
+  line-height: var(--line-height-heading);
+  margin: 0 0 var(--space-3);
+}
+
+h1 {
+  font-size: var(--font-size-h1);
+  font-weight: 400;
+}
+h2 {
+  font-size: var(--font-size-h2);
+  font-weight: 400;
+}
+h3 {
+  font-size: var(--font-size-h3);
+  font-weight: 600;
+}
+h4,
+h5,
+h6 {
+  font-size: var(--font-size-h4);
+  font-weight: 600;
+}
+
+small,
+figcaption,
+caption {
+  font-family: var(--font-caption);
+  font-size: var(--font-size-caption);
+}
+
+button,
+input,
+select,
+textarea {
+  font-family: inherit;
+  font-size: inherit;
+}
+
+#root {
+  min-height: 100vh;
 }

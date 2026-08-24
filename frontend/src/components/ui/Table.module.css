@@ -1,0 +1,24 @@
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--font-size-small);
+  font-variant-numeric: tabular-nums;
+}
+
+.th {
+  background: var(--brand-brown);
+  color: var(--brand-white);
+  font-family: var(--font-heading);
+  font-weight: 600;
+  text-align: left;
+  padding: 0.65em 0.85em;
+}
+
+.td {
+  padding: 0.6em 0.85em;
+  border-bottom: 1px solid var(--gray-200);
+}
+
+.table tbody tr:nth-child(even) {
+  background: var(--gray-50);
+}
