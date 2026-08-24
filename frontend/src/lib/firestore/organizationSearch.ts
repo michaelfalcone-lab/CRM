@@ -42,7 +42,7 @@ export function useOrganizationSearch(term: string): UseOrganizationSearchResult
         collection(db, 'organizations'),
         orderBy('nameLower'),
         where('nameLower', '>=', trimmed),
-        where('nameLower', '<=', trimmed + ''),
+        where('nameLower', '<=', trimmed + '\uf8ff'),
         limit(MAX_RESULTS),
       )
       getDocs(q)
