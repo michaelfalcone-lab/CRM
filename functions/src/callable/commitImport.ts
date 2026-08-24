@@ -178,7 +178,7 @@ function diffAndBuildUpdate(
 
   const setIfChanged = (field: keyof Contact, newValue: unknown) => {
     if (newValue === undefined) return // row didn't supply this field — leave untouched
-    const oldValue = (existing as Record<string, unknown>)[field]
+    const oldValue = (existing as unknown as Record<string, unknown>)[field]
     if (!valuesEqual(oldValue, newValue)) {
       updates[field] = newValue
       previousValues[field] = oldValue === undefined ? null : oldValue

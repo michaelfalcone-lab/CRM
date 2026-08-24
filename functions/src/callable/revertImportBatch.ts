@@ -30,7 +30,7 @@
  */
 import { HttpsError, onCall } from 'firebase-functions/v2/https'
 import { FieldValue, Timestamp } from 'firebase-admin/firestore'
-import type { Contact, ImportBatch, ImportBatchRow } from 'shared'
+import type { Contact, FirestoreTimestamp, ImportBatch, ImportBatchRow } from 'shared'
 import { db } from '../lib/firebaseAdmin'
 import { requireActiveAdmin } from '../lib/config'
 import { toUpdatePayload } from '../lib/importContactFields'
@@ -47,9 +47,18 @@ export interface RevertImportBatchResult {
   skippedContactIds: string[]
 }
 
-function isEqualTimestamp(a: Timestamp | undefined, b: Timestamp | undefined): boolean {
+/** `Contact.updatedAt` and `ImportBatchRow.writtenAt` are both typed via
+ * the structural `FirestoreTimestamp` interface (see `shared/src/types.ts`)
+ * so this package doesn't depend on either Firestore SDK's concrete class,
+ * but at runtime every value read back off the Admin SDK for a Timestamp
+ * field is always a real `Timestamp` instance — safe to cast through
+ * `unknown` to reach its concrete `.isEqual()`. */
+function isEqualTimestamp(
+  a: FirestoreTimestamp | undefined,
+  b: FirestoreTimestamp | undefined,
+): boolean {
   if (!a || !b) return false
-  return a.isEqual(b)
+  return (a as unknown as Timestamp).isEqual(b as unknown as Timestamp)
 }
 
 export const revertImportBatch = onCall<RevertImportBatchData>(async (request) => {

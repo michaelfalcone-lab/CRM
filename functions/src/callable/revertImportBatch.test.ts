@@ -3,6 +3,7 @@
  * Emulator Suite via `npm run test:functions`.
  */
 import { beforeEach, describe, expect, it } from 'vitest'
+import { Timestamp } from 'firebase-admin/firestore'
 import type { Contact, ImportBatch, User } from 'shared'
 import { db } from '../lib/firebaseAdmin'
 import { callableRequest, fakeAuth } from '../lib/testSupport'
@@ -25,7 +26,7 @@ async function seedUsers() {
     role: 'admin',
     active: true,
     authUid: ADMIN_UID,
-    createdAt: new Date(),
+    createdAt: Timestamp.now(),
     createdBy: 'seed-script',
   } satisfies User)
   await db.collection('users').doc(REP_EMAIL).set({
@@ -36,7 +37,7 @@ async function seedUsers() {
     role: 'rep',
     active: true,
     authUid: REP_UID,
-    createdAt: new Date(),
+    createdAt: Timestamp.now(),
     createdBy: 'seed-script',
   } satisfies User)
 }
@@ -148,9 +149,15 @@ describe('revertImportBatch', () => {
       .limit(1)
       .get()
     const editedContactId = editedRow.docs[0]!.id
-    // Simulate a real edit made after the import (e.g. via the UI), which
-    // bumps `updatedAt` away from the row's recorded `writtenAt`.
-    await db.collection('contacts').doc(editedContactId).update({ phone: '4015559999' })
+    // Simulate a real edit made after the import (e.g. via the UI). A real
+    // edit path always sets `updatedAt` explicitly on write (Firestore
+    // never bumps it automatically) — that's what the exact-timestamp
+    // check in `revertImportBatch` relies on to detect drift away from the
+    // row's recorded `writtenAt`.
+    await db
+      .collection('contacts')
+      .doc(editedContactId)
+      .update({ phone: '4015559999', updatedAt: Timestamp.now() })
 
     const result = await runRevert({ importBatchId: commit.importBatchId })
 
@@ -189,8 +196,12 @@ describe('revertImportBatch', () => {
     })
     expect(commit.updatedCount).toBe(1)
 
-    // Simulate an edit made to the contact after the import committed.
-    await db.collection('contacts').doc('preexisting-updated').update({ status: 'Past Customer' })
+    // Simulate an edit made to the contact after the import committed. As
+    // above, a real edit path always sets `updatedAt` explicitly.
+    await db
+      .collection('contacts')
+      .doc('preexisting-updated')
+      .update({ status: 'Past Customer', updatedAt: Timestamp.now() })
 
     const result = await runRevert({ importBatchId: commit.importBatchId })
 

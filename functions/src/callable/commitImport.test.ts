@@ -3,6 +3,7 @@
  * Suite via `npm run test:functions`.
  */
 import { beforeEach, describe, expect, it } from 'vitest'
+import { Timestamp } from 'firebase-admin/firestore'
 import type { Contact, Organization, User } from 'shared'
 import { db } from '../lib/firebaseAdmin'
 import { callableRequest, fakeAuth } from '../lib/testSupport'
@@ -22,7 +23,7 @@ async function seedCaller() {
     role: 'rep',
     active: true,
     authUid: CALLER_UID,
-    createdAt: new Date(),
+    createdAt: Timestamp.now(),
     createdBy: 'seed-script',
   } satisfies User)
 }
@@ -98,9 +99,9 @@ describe('commitImport', () => {
 
     // `writtenAt` on the row doc must be the exact same value written to
     // the contact's `createdAt`/`updatedAt`, not a separately resolved one.
-    const writtenAt = rowDoc.data().writtenAt
-    expect(contact.createdAt.isEqual(writtenAt)).toBe(true)
-    expect(contact.updatedAt.isEqual(writtenAt)).toBe(true)
+    const writtenAt = rowDoc.data().writtenAt as Timestamp
+    expect((contact.createdAt as unknown as Timestamp).isEqual(writtenAt)).toBe(true)
+    expect((contact.updatedAt as unknown as Timestamp).isEqual(writtenAt)).toBe(true)
   })
 
   it('Tier 1 (exact email) match updates the existing contact and records only changed fields', async () => {
@@ -145,7 +146,7 @@ describe('commitImport', () => {
     // marker; see lib/importContactFields.ts).
     expect(row.previousValues.phone).toBeNull()
     expect(row.previousValues.status).toBe('New Lead')
-    expect(contact.updatedAt.isEqual(row.writtenAt)).toBe(true)
+    expect((contact.updatedAt as unknown as Timestamp).isEqual(row.writtenAt as Timestamp)).toBe(true)
   })
 
   it('Tier 2 (digits-only phone, no email on either side) match updates the existing contact', async () => {
