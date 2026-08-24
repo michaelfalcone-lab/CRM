@@ -56,6 +56,44 @@ These apply to every task below — copy verbatim into each dispatch, do not re-
 - **No Cloud CI/CD required this phase** — deploys are manual, gated by a `predeploy` npm
   script that must run the full rules + functions test suite before any `firebase deploy`
   (this is a standing rule beyond phase 1, not just an initial step).
+- **Known environment limitation — the Functions emulator's real HTTP-callable path
+  crashes in this sandbox, independent of anything in our code.** Invoking any
+  `onCall` callable via a genuine HTTP request against a running `firebase
+  emulators:start`/`emulators:exec --only functions,...` (e.g. via `curl` or the
+  frontend's real `httpsCallable(...)`) fails with `"Your function was killed
+  because it raised an unhandled error"`, immediately after the emulator logs
+  `"Outgoing network have been stubbed"`. Investigated thoroughly (controller-level,
+  not a task defect): reproduced independent of Node version (fails identically
+  under the system's Node 24 and under a real local Node 20 matching
+  `functions/package.json`'s `engines.node`), independent of `firebase-admin`
+  Firestore transport (`initializeFirestore(app, { preferRest: true })` does not
+  fix it), and independent of port/process hygiene (reproduced with fully clean
+  ports and a fresh emulator hub each time). Matches a known, long-standing class
+  of firebase-tools bug where the Functions emulator's outbound-network stubbing
+  (a safety feature that mocks `http`/`https`/`net` to catch functions making
+  unexpected external calls) conflicts with gRPC-based Admin SDK calls made from
+  inside a callable — see firebase/firebase-tools#1404, #6765, #5227 for the same
+  symptom recurring across firebase-tools versions over several years. **This does
+  NOT affect the automated test suites** (`npm run test:functions`/`test:rules`) —
+  those invoke callables directly via the Functions Test SDK, in-process, bypassing
+  the HTTP-serving layer entirely, which is exactly why 46+66 tests already pass
+  cleanly despite this. It only blocks genuine end-to-end manual verification of a
+  callable through a live emulator + real HTTP round trip.
+  **Implication for Tasks 6, 7, 8's manual verification steps**: do not attempt a
+  live `httpsCallable` click-through against `firebase emulators:start` as proof a
+  callable-dependent flow (invite/link, CSV import/revert) works — it will hang or
+  crash in this environment regardless of whether the code is correct. Instead,
+  verify callable-dependent flows the way Task 5's implementer already
+  established: (a) trust the automated Functions Test SDK suite (already exercises
+  the real business logic against the real Firestore/Auth emulators, just not over
+  HTTP), (b) verify the Firestore/Auth emulator state directly (sign-in, documents
+  written/read) for the parts of a flow that don't require a callable round trip,
+  and (c) for frontend UI verification, use component tests that mock the
+  `httpsCallable` response to match the callable's real, tested contract (error
+  shape, success shape) rather than a live network call. Note this explicitly in
+  any task report that would otherwise claim "verified via a live emulator click-
+  through" for a callable-touching flow — that claim cannot be made truthfully in
+  this environment, and reviewers should not expect it.
 - **Firestore emulator requires the Java wrapper**: this environment has no system
   Java runtime. A local, non-sudo JDK and a resolver script are already set up at
   `scripts/with-java.sh` (committed in 8a44306) — every command that invokes
