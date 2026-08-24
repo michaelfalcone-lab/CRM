@@ -528,6 +528,23 @@ exist for search to return anything).
 **Goal**: The admin-only management screens (Users, Statuses, Opportunity Stages,
 Duplicates worklist) and the real global search bar.
 
+**Required fix carried in from Task 5/3 (not optional, small but real)**: `linkAccount`
+(functions/src/callable/linkAccount.ts) currently returns the raw Firestore document data
+for `updated.data()`/`snap.data()`, whose `createdAt`/`linkedAt` fields are Admin SDK
+`Timestamp` instances. Confirmed by tracing the actual encode/decode path (not a guess):
+`firebase-functions`' callable JSON encoder does a raw `Object.entries()` walk that only
+sees `Timestamp`'s own `_seconds`/`_nanoseconds` fields (the `seconds`/`nanoseconds`
+getters live on the prototype and are never invoked), and the client `@firebase/functions`
+SDK's decoder has no Timestamp-specific reconstruction — so the frontend receives
+`{_seconds, _nanoseconds}`, not the `{seconds, nanoseconds}` shape `shared`'s
+`FirestoreTimestamp` interface declares. This task is the first to display `User.createdAt`/
+`linkedAt` (in the Users admin view), so fix it here: have `linkAccount.ts` re-serialize
+those two fields before returning (e.g. via `.toDate().toISOString()`, or an explicit
+`{seconds, nanoseconds}` object matching the shared interface — implementer's call on
+which, but pick one and make the returned shape match `shared`'s `FirestoreTimestamp`
+exactly), and add an assertion to the existing `linkAccount.test.ts` proving the returned
+shape is correct, not just that the values are present.
+
 **Files to create**:
 - `/frontend/src/features/users`: list with role/position/active toggle, "Invite user"
   form calling the `inviteUser` callable.
