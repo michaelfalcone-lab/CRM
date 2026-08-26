@@ -11,6 +11,8 @@ interface ImportMetaEnv {
    * emulator wiring and point it at a real Firebase project instead. Any
    * other value (or unset) keeps the default: dev mode uses the emulator. */
   readonly VITE_USE_FIREBASE_EMULATOR?: string
+  /** Set to `"true"` in `.env.local` to skip sign-in during local dev. Ignored in production builds. */
+  readonly VITE_AUTH_BYPASS?: string
 }
 
 interface ImportMeta {

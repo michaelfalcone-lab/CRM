@@ -31,6 +31,7 @@ import {
 } from 'firebase/auth'
 import { httpsCallable, type FunctionsError } from 'firebase/functions'
 import { NOT_INVITED_REASON, type User } from 'shared'
+import { authBypassEnabled, devBypassUser } from '../lib/devAuthBypass'
 import { auth, functions } from '../lib/firebase'
 import { LoadingScreen } from './LoadingScreen'
 import { SignInScreen } from './SignInScreen'
@@ -68,11 +69,13 @@ function describeError(err: unknown): string {
 }
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [status, setStatus] = useState<AuthStatus>('loading')
-  const [user, setUser] = useState<User | null>(null)
+  const [status, setStatus] = useState<AuthStatus>(authBypassEnabled ? 'ready' : 'loading')
+  const [user, setUser] = useState<User | null>(authBypassEnabled ? devBypassUser : null)
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
+    if (authBypassEnabled) return
+
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
       if (!firebaseUser) {
         setUser(null)
@@ -104,6 +107,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [])
 
   const signIn = async () => {
+    if (authBypassEnabled) return
     setError(null)
     try {
       await signInWithPopup(auth, new GoogleAuthProvider())
@@ -114,6 +118,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }
 
   const signOutUser = async () => {
+    if (authBypassEnabled) return
     await firebaseSignOut(auth)
   }
 

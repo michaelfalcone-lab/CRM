@@ -21,6 +21,11 @@ vi.mock('../lib/firebase', () => ({
   functions: {},
 }))
 
+vi.mock('../lib/devAuthBypass', () => ({
+  authBypassEnabled: false,
+  devBypassUser: null,
+}))
+
 vi.mock('firebase/auth', () => ({
   onAuthStateChanged: (...args: unknown[]) => onAuthStateChangedMock(...args),
   signInWithPopup: (...args: unknown[]) => signInWithPopupMock(...args),
