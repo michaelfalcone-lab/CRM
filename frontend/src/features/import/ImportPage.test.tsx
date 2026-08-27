@@ -131,8 +131,11 @@ describe('ImportPage — admin', () => {
     await uploadAndReachPreview(user)
 
     // Auto-detected mapping produced usable rows: 2 total, 1 valid, 1 flagged.
-    expect(screen.getByText('2')).toBeInTheDocument() // total
-    expect(screen.getAllByText('1')).toHaveLength(2) // valid + flagged both show "1"
+    // Scoped to the summary stat value class — a plain getByText('2') is
+    // ambiguous because the preview table's "Row" column also displays a
+    // literal "2" for the second data row.
+    expect(screen.getByText('2', { selector: '.summaryValue, span' })).toBeInTheDocument() // total
+    expect(screen.getAllByText('1', { selector: '.summaryValue, span' })).toHaveLength(2) // valid + flagged
 
     // Admin sees a real owner picker, defaulted to themselves.
     const ownerSelect = screen.getByLabelText(/assign new contacts to/i) as HTMLSelectElement
@@ -152,7 +155,13 @@ describe('ImportPage — admin', () => {
       {},
     ])
 
-    expect(screen.getByText('1', { selector: '.summaryValue, span' })).toBeInTheDocument()
+    // "Created: 1" and "Skipped (errors): 1" both render the literal text
+    // "1" — scope to each stat's own label so the assertion pins the
+    // specific number, not just that a "1" exists somewhere on the page.
+    expect(within(screen.getByText('Created').parentElement!).getByText('1')).toBeInTheDocument()
+    expect(
+      within(screen.getByText('Skipped (errors)').parentElement!).getByText('1'),
+    ).toBeInTheDocument()
     expect(screen.getByText(/row 2: row has no name, email, or phone/i)).toBeInTheDocument()
 
     const undoButton = screen.getByRole('button', { name: /undo this import/i })

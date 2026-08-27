@@ -1,4 +1,4 @@
-import { forwardRef, type SelectHTMLAttributes } from 'react'
+import { forwardRef, useId, type SelectHTMLAttributes } from 'react'
 import styles from './Select.module.css'
 
 export interface SelectOption {
@@ -23,8 +23,17 @@ export const Select = forwardRef<HTMLSelectElement, SelectProps>(function Select
   { label, error, options, placeholder, id, className, ...rest },
   ref,
 ) {
-  const selectId = id ?? rest.name
-  const errorId = selectId ? `${selectId}-error` : undefined
+  // Callers that don't go through React Hook Form's `register()` (which
+  // supplies `name`) and don't pass an explicit `id` previously ended up
+  // with an unlabeled select: `label`/`htmlFor` were rendered, but with no
+  // `id` on the <select> the association was purely visual, not
+  // programmatic — a real accessibility defect (undetectable by
+  // `getByLabelText`, screen readers, etc.), not just a test inconvenience.
+  // `useId()` guarantees every Select has a stable, unique id regardless of
+  // what the caller passes.
+  const generatedId = useId()
+  const selectId = id ?? rest.name ?? generatedId
+  const errorId = `${selectId}-error`
   return (
     <div className={styles.field}>
       <label className={styles.label} htmlFor={selectId}>
