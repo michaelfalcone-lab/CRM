@@ -54,6 +54,15 @@ export interface UseContactsResult {
  * contacts list) or `ownerId`/`status` together (the contacts list page's
  * filters) — see `firestore.indexes.json` for the composite indexes each
  * combination needs in production (the emulator doesn't enforce them).
+ *
+ * Excludes any contact with `mergedInto` set (Task 10's Duplicates
+ * worklist "Confirm duplicate" action) client-side rather than via an
+ * additional `where('mergedInto', '==', null)` query constraint — adding
+ * that as a real constraint would require a new composite index for every
+ * existing filter combination above, which is unwarranted schema/index
+ * churn for what's normally a tiny fraction of a rep's contact list. A
+ * merged-away contact is rare enough that filtering the already-fetched
+ * snapshot client-side costs nothing meaningful.
  */
 export function useContacts(filters: ContactFilters = {}): UseContactsResult {
   const { ownerId, status, organizationId } = filters
@@ -73,7 +82,10 @@ export function useContacts(filters: ContactFilters = {}): UseContactsResult {
     const unsubscribe = onSnapshot(
       q,
       (snapshot) => {
-        setContacts(snapshot.docs.map((d) => ({ id: d.id, ...(d.data() as Contact) })))
+        const live = snapshot.docs
+          .map((d) => ({ id: d.id, ...(d.data() as Contact) }))
+          .filter((contact) => contact.mergedInto == null)
+        setContacts(live)
         setLoading(false)
         setError(null)
       },

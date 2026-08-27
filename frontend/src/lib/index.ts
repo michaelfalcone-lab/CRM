@@ -46,6 +46,13 @@ export {
 
 export { useContactNotes, addNote, updateNote, deleteNote } from './firestore/notes'
 
+export {
+  useFlaggedDuplicates,
+  markNotDuplicate,
+  confirmDuplicateMerge,
+  type UseFlaggedDuplicatesResult,
+} from './firestore/duplicates'
+
 export { useStatuses, useOpportunityStages } from './firestore/config'
 
 export { useOwnerDirectory, type OwnerOption } from './firestore/users'

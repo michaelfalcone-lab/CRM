@@ -12,7 +12,9 @@
  *      again).
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { act, renderHook } from '@testing-library/react'
 import { ACTIVITY_TYPES, type LastContactMode } from 'shared'
+import type { Contact } from 'shared'
 
 const addDocMock = vi.fn()
 const updateDocMock = vi.fn()
@@ -26,6 +28,11 @@ const writeBatchMock = vi.fn((..._args: unknown[]) => ({
   set: batchSetMock,
   commit: batchCommitMock,
 }))
+let snapshotCallback: ((snapshot: { docs: { id: string; data: () => unknown }[] }) => void) | undefined
+const onSnapshotMock = vi.fn((_query: unknown, onNext: typeof snapshotCallback) => {
+  snapshotCallback = onNext
+  return vi.fn() // unsubscribe
+})
 
 vi.mock('firebase/firestore', () => ({
   addDoc: (...args: unknown[]) => addDocMock(...args),
@@ -33,7 +40,8 @@ vi.mock('firebase/firestore', () => ({
   collection: (...args: unknown[]) => collectionMock(...args),
   doc: (...args: unknown[]) => docMock(...args),
   writeBatch: (...args: unknown[]) => writeBatchMock(...args),
-  onSnapshot: vi.fn(),
+  onSnapshot: (...args: unknown[]) =>
+    onSnapshotMock(...(args as [unknown, typeof snapshotCallback])),
   orderBy: vi.fn(),
   query: vi.fn((ref: unknown) => ref),
   where: vi.fn(),
@@ -46,7 +54,29 @@ vi.mock('firebase/firestore', () => ({
 
 vi.mock('../firebase', () => ({ db: {} }))
 
-import { ACTIVITY_TYPE_TO_LAST_CONTACT_MODE, createContact, logContact, updateContact } from './contacts'
+import { ACTIVITY_TYPE_TO_LAST_CONTACT_MODE, createContact, logContact, updateContact, useContacts } from './contacts'
+
+function contactDoc(id: string, overrides: Partial<Contact> = {}): { id: string; data: () => Contact } {
+  const data: Contact = {
+    firstName: 'F',
+    lastName: id,
+    organizationId: null,
+    ownerId: 'rep-1',
+    source: 'manual',
+    externalIds: { paciolanCustomerId: null },
+    mergedInto: null,
+    duplicateReviewStatus: null,
+    possibleDuplicateOf: null,
+    searchTokens: [],
+    nameLower: id.toLowerCase(),
+    createdAt: { seconds: 0, nanoseconds: 0 },
+    updatedAt: { seconds: 0, nanoseconds: 0 },
+    createdBy: 'rep-1',
+    importBatchId: null,
+    ...overrides,
+  }
+  return { id, data: () => data }
+}
 
 beforeEach(() => {
   vi.clearAllMocks()
@@ -256,5 +286,36 @@ describe('logContact', () => {
     await logContact('contact-1', 'Email', new Date(), { ...baseContext, organizationId: null })
     const activityPayload = batchSetMock.mock.calls[0]![1] as Record<string, unknown>
     expect(activityPayload.organizationId).toBeNull()
+  })
+})
+
+describe('useContacts', () => {
+  beforeEach(() => {
+    snapshotCallback = undefined
+  })
+
+  it('excludes a contact with mergedInto set from the returned list (Task 10: a merged-away contact must disappear from the default list)', () => {
+    const { result } = renderHook(() => useContacts())
+
+    act(() => {
+      snapshotCallback?.({
+        docs: [
+          contactDoc('live', { mergedInto: null }),
+          contactDoc('merged-away', { mergedInto: 'live' }),
+        ],
+      })
+    })
+
+    expect(result.current.contacts.map((c) => c.id)).toEqual(['live'])
+  })
+
+  it('returns every contact when none are merged', () => {
+    const { result } = renderHook(() => useContacts())
+
+    act(() => {
+      snapshotCallback?.({ docs: [contactDoc('a'), contactDoc('b')] })
+    })
+
+    expect(result.current.contacts.map((c) => c.id).sort()).toEqual(['a', 'b'])
   })
 })
