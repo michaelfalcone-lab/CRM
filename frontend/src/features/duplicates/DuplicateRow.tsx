@@ -117,10 +117,24 @@ export function DuplicateRow({ contact, isAdmin, owners, currentUserUid }: Dupli
         </div>
       </div>
 
+      {/* Deliberately states only what the flag itself proves — that the two
+          names matched — and does NOT characterize what the email/phone tiers
+          did or didn't check. Two earlier drafts of this copy each asserted an
+          absence the matcher never established: "no shared email or phone on
+          record" (false whenever the row carries an email, since the phone tier
+          is skipped entirely then) and "phone wasn't checked" (false in the
+          symmetric case — a row with no email but a phone DOES run the phone
+          tier, which can find a phone-matching contact and then discard it only
+          because that contact has an email on file, landing here on the name
+          match anyway; see `functions/src/lib/identityMatching.ts`'s Tier-2
+          gating and its candidate filter). Per-row tier data isn't persisted, so
+          this component genuinely cannot know which path produced a given flag.
+          The contacts' real email and phone values are rendered directly above
+          for the admin to compare; the copy points there instead of narrating
+          matcher internals it can't verify. */}
       <p className={styles.matchReason}>
-        Matched on name only during import. Email didn&rsquo;t match, and phone wasn&rsquo;t
-        checked &mdash; the matcher only compares phone numbers when neither contact has an
-        email on file. Review before merging.
+        Flagged during import because these two names matched. That&rsquo;s all this flag
+        establishes &mdash; compare the details above before merging.
       </p>
 
       {isAdmin ? (

@@ -143,15 +143,22 @@ describe('DuplicateRow', () => {
     expect(screen.getByText(/does not move this contact.s opportunities or notes/i)).toBeInTheDocument()
   })
 
-  it('describes the match reason accurately — it must not claim phone was checked and found no match (Finding 3 regression)', () => {
-    // `functions/src/lib/identityMatching.ts`'s Tier 2 phone check is
-    // skipped entirely whenever the row has any email value, so two
-    // contacts sharing an identical phone number can still be flagged
-    // Tier-3 (name-only) without phone ever being evaluated. The copy must
-    // not assert "no shared ... phone on record" as a verified fact.
+  it('describes the match reason without asserting anything the matcher never established (Finding 3 regression)', () => {
+    // Two earlier drafts of this copy each claimed an absence
+    // `functions/src/lib/identityMatching.ts` never establishes:
+    //   - "no shared email or phone on record" — false whenever the row
+    //     carries an email, since Tier 2 (phone) is skipped entirely then.
+    //   - "phone wasn't checked" — false in the symmetric case: a row with
+    //     no email but a phone DOES run Tier 2, which can find a
+    //     phone-matching contact and discard it only because that contact
+    //     has an email on file, landing on the Tier-3 name match anyway.
+    // Per-row tier data isn't persisted, so the component cannot know which
+    // path produced a flag. It must claim only the name match.
     renderRow(true)
     expect(screen.queryByText(/no shared email or phone on record/i)).not.toBeInTheDocument()
-    expect(screen.getByText(/phone wasn.t checked/i)).toBeInTheDocument()
+    expect(screen.queryByText(/phone wasn.t checked/i)).not.toBeInTheDocument()
+    expect(screen.queryByText(/didn.t match/i)).not.toBeInTheDocument()
+    expect(screen.getByText(/these two names matched/i)).toBeInTheDocument()
   })
 
   it('surfaces an error and re-enables the buttons if confirming a merge fails (Finding 4 regression)', async () => {
