@@ -72,9 +72,102 @@ apps → SDK setup and configuration → Config):
   at a real Firebase project instead of the Local Emulator Suite. Any other value (or
   unset) uses the emulator whenever Vite is in dev mode; a production `vite build` never
   wires up the emulator regardless of this variable.
+- `VITE_AUTH_BYPASS` (optional, **dev-only**) — set to `"true"` to skip Google sign-in and
+  enter the app as a mock admin user (`frontend/src/lib/devAuthBypass.ts`) during local
+  dev. It's gated on `import.meta.env.DEV`, so it's inert and dead-code-eliminated from
+  any production `vite build`, but **never set `VITE_AUTH_BYPASS` in a deployed
+  environment's config** — e.g. don't set it as a Firebase Hosting env var or bake it into
+  a deployed build's `.env`. It exists purely as a local convenience.
 
 When running against the Local Emulator Suite, these can be any non-empty placeholder
 values — the emulator doesn't validate them.
+
+## Deployment
+
+**`npm run deploy` is the only supported way to ship this app — never run a bare
+`firebase deploy` (or `npx firebase deploy`) directly.** `npm run deploy` has a
+`predeploy` script (`npm run test:rules && npm run test:functions`) wired to it via npm's
+built-in `pre<script>` convention: npm runs `predeploy` automatically before `deploy`,
+and if it exits non-zero, `deploy` (the actual `firebase deploy`) never runs. This is
+enforced by npm itself, not by a reminder to run tests first — an ordinary `npm run
+deploy` cannot skip the gate. (The one exception is passing an explicit
+`--ignore-scripts` flag, which disables _all_ pre/post-script hooks — never do this for a
+deploy.)
+
+### One-time GCP/Firebase project setup
+
+Only needed once, when standing up a new environment (e.g. production) that doesn't
+exist yet:
+
+1. Create a Firebase project in the [Firebase Console](https://console.firebase.google.com)
+   (or `firebase projects:create`).
+2. Enable **Firestore** in Native mode, in your target region.
+3. Enable **Firebase Authentication** and turn on the **Google** sign-in provider. Under
+   the Google provider's settings, restrict it to the Workspace domain this app is
+   configured for (`brown.edu` — see `WORKSPACE_DOMAIN` in
+   `functions/src/lib/config.ts`), or otherwise ensure only that domain's accounts can
+   sign in; the callables re-check this server-side, but narrowing it at the Auth
+   provider level is good defense in depth.
+4. Enable **Firebase Hosting** for the project.
+5. Register a **Web app** in Project settings → General → Your apps, and copy its SDK
+   config values — you'll need them for the frontend env vars below.
+6. Replace the placeholder project ID in `.firebaserc` (`"default": "replace-with-project-id"`)
+   with your real Firebase project ID, or run `firebase use --add` and select it
+   interactively.
+7. Set the Cloud Functions runtime's required config/environment as needed (this app's
+   functions currently need no additional runtime config beyond the Admin SDK's default
+   credentials).
+
+### Frontend production env vars
+
+Before building, provide the frontend's env vars for the target environment (e.g. as a
+`frontend/.env.production.local`, or however your CI/CD injects Vite env vars at build
+time) — the same `VITE_FIREBASE_*` values described above, populated with the real
+project's Web app config. Leave `VITE_USE_FIREBASE_EMULATOR` unset (a production build
+never uses the emulator regardless) and **do not set `VITE_AUTH_BYPASS`** — see the
+warning above.
+
+### Deploying
+
+From the repo root, with the correct project selected (`.firebaserc` / `firebase use`)
+and authenticated (`firebase login`, or equivalent CI credentials):
+
+```
+npm run deploy
+```
+
+This runs the full `test:rules` (66 tests) and `test:functions` (52+ tests) suites
+against the Firestore/Auth emulators first, then — only if both pass — runs
+`firebase deploy`, which deploys Firestore rules/indexes, Cloud Functions, and Hosting
+together as configured in `firebase.json`.
+
+### First-admin bootstrap
+
+`inviteUser` (the callable that creates new `users` docs) is admin-only, which means a
+brand-new project has no way to invite its first user through the app itself. Immediately
+after the first `npm run deploy` against a new project, run the bootstrap script once,
+with credentials for that project (e.g. `GOOGLE_APPLICATION_CREDENTIALS` pointing at a
+service account key, or `gcloud auth application-default login` under an authorized
+account):
+
+```
+GOOGLE_APPLICATION_CREDENTIALS=/path/to/service-account.json \
+GCLOUD_PROJECT=<your-project-id> \
+  node scripts/bootstrapFirstAdmin.ts admin@brown.edu "Admin Name"
+```
+
+This creates a single `users/{email}` doc with `role: 'admin'`. It **refuses to run if
+any `users` doc already exists** (checked in a Firestore transaction, server-side —
+not just documented), so it can only ever be used once per project and can't become a
+standing privilege-escalation path. See the doc comment at the top of
+`scripts/bootstrapFirstAdmin.ts` for the full design rationale (why this is a standalone
+script rather than a callable) and the emulator-based invocation used for local
+verification.
+
+After the script succeeds, have that admin sign in with Google normally — the existing
+`linkAccount` callable links their Firebase Auth uid to the bootstrapped `users` doc on
+first sign-in, exactly as it does for any other invited user. From there, they can invite
+everyone else through the app's normal admin UI / the `inviteUser` callable.
 
 ## Brand assets
 
