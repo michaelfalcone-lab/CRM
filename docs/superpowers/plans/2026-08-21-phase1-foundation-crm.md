@@ -520,112 +520,227 @@ another rep's; admin can edit anything; add an opportunity to a contact and conf
 stage badge is visually distinct from the contact's relationship-status badge (different
 color treatment, per approved design §8). Commit.
 
-## Task 7: Frontend — Admin Features & Global Search
+## Task 7: Production Readiness & Deployment Hardening
 
-**Depends on**: Task 5, Task 6 (reuses list/table patterns), Task 4 (search fields must
-exist for search to return anything).
+**Depends on**: Tasks 1-6 (all complete). Sequenced first because it protects every task
+after it and has no dependency on the feature work below.
 
-**Goal**: The admin-only management screens (Users, Statuses, Opportunity Stages,
-Duplicates worklist) and the real global search bar.
-
-**Required fix carried in from Task 5/3 (not optional, small but real)**: `linkAccount`
-(functions/src/callable/linkAccount.ts) currently returns the raw Firestore document data
-for `updated.data()`/`snap.data()`, whose `createdAt`/`linkedAt` fields are Admin SDK
-`Timestamp` instances. Confirmed by tracing the actual encode/decode path (not a guess):
-`firebase-functions`' callable JSON encoder does a raw `Object.entries()` walk that only
-sees `Timestamp`'s own `_seconds`/`_nanoseconds` fields (the `seconds`/`nanoseconds`
-getters live on the prototype and are never invoked), and the client `@firebase/functions`
-SDK's decoder has no Timestamp-specific reconstruction — so the frontend receives
-`{_seconds, _nanoseconds}`, not the `{seconds, nanoseconds}` shape `shared`'s
-`FirestoreTimestamp` interface declares. This task is the first to display `User.createdAt`/
-`linkedAt` (in the Users admin view), so fix it here: have `linkAccount.ts` re-serialize
-those two fields before returning (e.g. via `.toDate().toISOString()`, or an explicit
-`{seconds, nanoseconds}` object matching the shared interface — implementer's call on
-which, but pick one and make the returned shape match `shared`'s `FirestoreTimestamp`
-exactly), and add an assertion to the existing `linkAccount.test.ts` proving the returned
-shape is correct, not just that the values are present.
-
-**Files to create**:
-- `/frontend/src/features/users`: list with role/position/active toggle, "Invite user"
-  form calling the `inviteUser` callable.
-- `/frontend/src/features/statuses` and `/opportunity-stages`: near-identical ordered
-  lists with add/rename/reorder/deactivate (soft-delete via `active: false` — never hard
-  delete, since existing records may reference a retired value). Seed data note: on first
-  run (or via a documented one-time seed script/admin action — implementer's call,
-  document it) the `statuses` collection should offer to seed the default relationship set
-  (New Lead, Active, Past Customer, Inactive, Do Not Contact — **not** "Bad Timing" or any
-  deal-stage language) and `opportunityStages` should seed (New, Contacted, Proposal Sent,
-  Closed Won, Closed Lost).
-- `/frontend/src/features/duplicates`: admin-only, lists contacts with
-  `duplicateReviewStatus == 'flagged'` (using the Task-2 composite index), each row shows
-  the flagged contact next to its `possibleDuplicateOf` target. Two actions: "Not a
-  duplicate" (sets `duplicateReviewStatus: 'resolved'`, clears `possibleDuplicateOf`) and
-  "Confirm duplicate" (sets `mergedInto: <targetId>` + `duplicateReviewStatus:
-  'resolved'`). No field-by-field merge UI — these two actions only, per approved design.
-  Both actions must go through a path an admin's client-side rules actually permit (direct
-  Firestore write from an admin account is fine per Task 2's rules — no new callable
-  needed here unless the implementer finds a reason one is required; if so, document why).
-- `/frontend/src/features/search`: the real global search bar in the app shell's top bar
-  (replacing Task 5's placeholder). Debounced (~250ms) `nameLower` prefix query
-  (`orderBy('nameLower').startAt(q).endAt(q + '')`) against both `contacts` and
-  `organizations`, with an `array-contains` fallback/supplement on `searchTokens` when the
-  query looks like an email/phone or the prefix query returns few/no results. Merge,
-  dedupe, and label results by type in a dropdown; each result links to its detail page.
-
-**Verification**: manual walk (documented): invite a second user; edit/reorder/deactivate
-a status and an opportunity stage and confirm existing references don't break; run a
-search that returns both a contact and an organization by partial name, one by email, and
-confirm the Duplicates worklist correctly lists a contact flagged in Task 4's tests
-(seed one via the emulator if none exists from real usage) and that both worklist actions
-work and are blocked for a non-admin. Component tests for the search debounce/merge logic.
-Commit.
-
-## Task 8: Frontend — CSV Import UI & Deployment Config
-
-**Depends on**: Task 4 (`commitImport`/`revertImportBatch` callables), Task 5 (shell/
-components), Task 6 (needed so imported contacts are viewable in context).
-
-**Goal**: The import feature's UI, plus the deployment scripts and documentation that
-make this phase deployable and safely re-deployable going forward.
+**Goal**: This system is safe to depend on and safe to redeploy from day one — a test gate
+that cannot be bypassed, a working first-admin bootstrap path, and deployment docs.
 
 **Files to create/modify**:
-- `/frontend/src/features/import`: file picker (`.csv`/`.txt`) using a client-side CSV
-  parser (e.g. PapaParse — add as a frontend dependency); column-mapping step (detected
-  headers → target fields: name-or-firstName/lastName, email, phone, organization name,
-  status, lastContactDate, lastContactMode, or "Ignore"; mapping is not persisted across
-  sessions); preview step (mapped rows in a table, flags missing-required-field rows
-  before allowing commit, shows counts); commit step calls the `commitImport` callable and
-  shows the returned summary (created/updated/possibleDuplicate/error counts); a
-  batch-detail view (list of past `importBatches`, using the Task-2 `importBatchId`+
-  `createdAt` index to show "everything from this batch") with an "Undo" action that calls
-  `revertImportBatch` when `status == 'committed'`, showing the revert summary
-  (including which rows were skipped as edited-since-import).
-- Root `package.json`: add a `predeploy` script per Global Constraints — must run the full
-  rules test suite (Task 2) and functions unit test suite (Tasks 3–4) and fail the deploy
-  if either fails (e.g. `"predeploy": "npm run test:rules && npm run test:functions"`,
-  wired so `npm run deploy` (a new script that runs `firebase deploy`) cannot proceed on a
-  failing suite — use npm's pre-script convention or an explicit `&&` chain, implementer's
-  call, but it must be enforced by the script, not just documented).
-- `/functions/src/callable/bootstrapFirstAdmin.ts` (or a standalone Admin-SDK script under
-  `/scripts` — implementer's call, document the choice): the one-time first-admin creation
-  path from approved design §4.6, since normal invites require an existing admin. If a
-  callable, it must refuse to run once any `users` doc exists (checked server-side) so it
-  can't be (re)used as a privilege-escalation path after initial setup.
-- Root `README.md`: finalize with the monorepo layout, local dev instructions
-  (`firebase emulators:start` + `npm run dev`), the required Vite env vars, the manual
-  GCP/Firebase prerequisite steps from approved design §1 (link to or summarize them), the
-  first-admin bootstrap step, and the **predeploy test-gate rule** stated explicitly as a
-  standing requirement for every future deploy, not just this one.
+- Root `package.json`: a `predeploy` script running `npm run test:rules && npm run
+  test:functions` (both already wired by Tasks 2/3 — read the current scripts block and
+  compose with them, don't reinvent), and a `deploy` script that cannot proceed if
+  `predeploy` fails. Use npm's built-in `pre<script>` convention or an explicit `&&`
+  chain — implementer's call, but the gate must be enforced by the script itself, not by
+  documentation asking someone to remember.
+- `functions/src/callable/bootstrapFirstAdmin.ts` **or** a standalone Admin-SDK script
+  under `/scripts` — implementer's call, but pick the same approach Task 8's seed script
+  uses so the two one-time bootstrap operations are consistent; document the choice.
+  Creates the first `admin`-role `users` doc. **Must refuse to run if any `users` doc
+  already exists** (checked server-side), so it can never become a standing
+  privilege-escalation path after initial setup.
+- Root `README.md`: a deployment section covering the manual GCP/Firebase project setup
+  steps, required frontend env vars (including that `VITE_AUTH_BYPASS` is dev-only and
+  must never be set in a deployed environment), the first-admin bootstrap step, and the
+  standing rule that `npm run deploy` — never a bare `firebase deploy` — is the only
+  supported way to ship, because that's what enforces the test gate.
 
-**Verification**: manual walk (documented) against the emulator: import a small sample
-CSV with an intentional near-duplicate name-only row, confirm it's flagged (not
-auto-merged) and appears correctly in the batch summary and later in the Duplicates
-worklist (Task 7); undo that batch and confirm created contacts disappear, an
-intentionally-edited-after-import contact from the batch is correctly skipped and
-reported, and the batch status updates to `reverted` or `partially_reverted` correctly.
-Run `npm run deploy` (or equivalent) against the emulator/dry-run path with a deliberately
-broken rules test and confirm the `predeploy` gate blocks it, then fix it and confirm it
-proceeds. Commit.
+**Verification**: deliberately break one rules test and confirm `npm run deploy` refuses
+to proceed (non-zero exit, no deploy attempted); restore it and confirm the gate passes.
+Run the bootstrap path twice against the emulator and confirm the second run is refused.
+Confirm `npm run test:rules` and `npm run test:functions` still pass (66 and 46
+respectively at last count). Commit.
+
+## Task 8: Dashboard, Activity Logging & Pipeline Configuration
+
+**Depends on**: Task 7 (deploy gate exists before new features land), Tasks 4-6 (Contacts/
+Opportunities data and UI, search-token triggers).
+
+**Goal**: The four-widget sales-output dashboard from the finalized mockup, the
+`activities` log that feeds it, and the simplified 5-stage pipeline it reports on.
+
+**Schema** (`shared/src/types.ts`, `shared/src/constants.ts`):
+- `ActivityType` union, exactly these 7 values: `'Email' | 'Inbound Call' | 'Outbound Call
+  - Talked To' | 'Outbound Call - VM' | 'Onsite Appointment' | 'Seat Visit' | 'Other'`.
+- `Activity` interface → `activities/{id}` (top-level, NOT a subcollection, so it can be
+  aggregated without a collection-group query): `contactId`, `contactName` (denormalized),
+  `organizationId: string | null`, `type: ActivityType`, `ownerId`, `note?`, `occurredAt`,
+  `createdAt`, `createdBy`.
+- `OpportunityStage`: add `isWon?: boolean`, `isLost?: boolean`.
+- `Opportunity`: add `lostReason?: string`, `wonAt?: FirestoreTimestamp`, `lostAt?:
+  FirestoreTimestamp`.
+- `shared/src/constants.ts`: `ACTIVITY_TYPES` (ordered, matching the union above) and
+  `LOST_REASONS` (`'Downgrade' | 'Not Approved' | 'Past Poor Fan Experience' | 'Too Many
+  Games' | 'Cost' | 'Game Times' | 'Other'`). **Named exports only** — a bare `export *`
+  breaks Vite's dev-mode CJS/ESM interop for this workspace package (see the existing
+  `NOT_INVITED_REASON` export and its comment for exactly why).
+
+**`wonAt`/`lostAt` maintenance** (`frontend/src/lib/firestore/opportunities.ts` — read the
+current `updateOpportunity` to find the exact extension point): on every opportunity
+update, compare the outgoing stage's `isWon`/`isLost` flags against the incoming stage's.
+Set `wonAt`/`lostAt` to now **only on the transition into** a won/lost stage (never
+overwrite an existing value — an opportunity edited later must keep its original close
+date), and clear the field (`deleteField()`) if it transitions back out to an open stage.
+This is what makes "won this month" mean "actually closed this month," not "last edited
+while in a won stage."
+
+**Firestore rules** (`firestore.rules`):
+```
+match /activities/{activityId} {
+  allow read: if isActiveUser();
+  allow create: if isActiveUser() && (isAdmin() || request.resource.data.ownerId == callerUid());
+  allow update: if isAdmin() || (ownsRecord() && ownerUnchanged());
+  allow delete: if isAdmin();
+}
+```
+Also widen the existing `users/{userEmail}` rule: `allow read: if isAdmin();` becomes
+`allow read: if isActiveUser();` (`allow write` stays `isAdmin()`-only — do not change
+it). Every team member must be able to resolve every rep's display name for the dashboard.
+Update the existing rules tests' admin-only-`read` assertions for `users` to match this
+deliberately wider policy, and add a full `activities` test block mirroring the existing
+per-collection coverage pattern (owner-create-allow, other-owner-create-deny,
+admin-create-any-owner-allow, read-allow-for-any-active-user, delete-admin-only,
+inactive/unlinked-user-denied).
+
+**Log Contact extension** (`frontend/src/lib/firestore/contacts.ts:228`'s `logContact`,
+called from `frontend/src/features/contacts/ContactDetailView.tsx`'s `handleLogContact`):
+widen the mode dropdown from the 5 `LastContactMode` values to the 7 `ACTIVITY_TYPES`.
+`logContact` must write **both** the existing `Contact.lastContactDate`/`lastContactMode`
+update (mapping the 7 types down to the legacy 5-value field via a small mapping table —
+that field still feeds `commitImport` and the manual contact-edit form and must not
+change) **and** one new `activities` doc, **in a single `writeBatch`** so they cannot
+partially fail. Manual edits to `lastContactMode`/`lastContactDate` via the contact edit
+form must NOT create an activity — only the dedicated Log Contact action does.
+
+**Time period** — a `{ preset, start, end }` selection (`'overall' | 'today' | 'week' |
+'month' | 'season' | 'custom'`) lives in `DashboardPage`, above the fetching hook;
+changing it refetches in place, no route change. **Season** = the current academic year,
+Aug 1 through Jun 30, computed from today's date (before Aug 1, it's the prior Aug 1;
+on/after Aug 1, it's this year's) — verify both sides of the Jul 31/Aug 1 boundary in
+tests. **Custom** = two date pickers, validated (end cannot precede start).
+
+**Queries** — no new composite indexes needed (each range-filters a single field with no
+other equality/order-by; Firestore indexes single fields automatically). `useDashboardData
+({ start, end })` fires:
+- `activities`: `where('occurredAt', '>=', start), where('occurredAt', '<=', end)` —
+  omitted entirely for `'overall'`.
+- `opportunities`: **three separate queries** on three different fields — `createdAt`
+  (→ Opportunities Created), `wonAt` (→ Won, gauge numerator), `lostAt` (→ gauge
+  denominator's other half) — merged client-side into a doc-ID-keyed map, deduplicated.
+- `contacts`, `organizations`, `opportunityStages`, `users`: unfiltered (not period-scoped
+  data).
+
+**Dashboard** (`frontend/src/features/dashboard/`, following the existing feature-folder
+convention). Aggregation logic must live in pure, separately-testable functions (an
+`aggregations.ts` or similar), not inline in components. Four widgets, matching the
+approved mockup's layout:
+1. **Total Output** (left, large) — Recharts stacked horizontal bar, one row per rep plus
+   a Team Total row. Bucketing rule (confirmed, implement exactly): a contact's **earliest
+   activity in the selected period** → `Initial Outreach`, regardless of its type. Every
+   **later** activity for that same contact in the period → bucketed by type: `Calls`
+   (Inbound Call, Outbound Call - Talked To, Outbound Call - VM), `Emails` (Email),
+   `Meetings` (Onsite Appointment, Seat Visit), `Follow-ups` (Other — the catch-all for a
+   later touch that isn't a call/email/meeting).
+2. **Win Rate % gauge** (right, top) — Recharts radial gauge, `wonCount / (wonCount +
+   lostCount)` over the period. Handle the zero-denominator case explicitly.
+3. **Conversion & Results** (right, below gauge) — table (existing `Table` component):
+   rows Connections / Opportunities Created / Opportunities Won / Conversion Rate;
+   columns one per rep + Team Total. **Connections** = count of activities whose type is a
+   real two-way interaction (Inbound Call, Outbound Call - Talked To, Onsite Appointment,
+   Seat Visit). **Conversion Rate** = Won ÷ Created (handle divide-by-zero).
+4. **Pipeline — rep vs. rep** (left, below Total Output) — Recharts stacked horizontal
+   bar, one row per rep, segments by stage. Period scope: an opportunity is included if
+   `createdAt`, `wonAt`, OR `lostAt` falls in the window (the deduplicated union of the
+   three queries above), shown at its current stage.
+
+**Both stacked bar charts** must have a real numeric `XAxis` (`type="number"`) with tick
+marks, a vertical-only `CartesianGrid`, each bar labeled with its total at the end, and
+Recharts' built-in `Tooltip` for per-segment values on hover.
+
+**Color plan**: brand brown `#4e3629` and red `#c00404`, plus the brown-athletics-brand
+skill's documented extended neutral ramp (`#7a6a5f`, `#a89d94`, `#2f2f2f`, `#8c8c8c`) for
+the remaining series — the official 3-color palette cannot carry a 5-segment stacked bar,
+and that skill's `references/data-viz.md` documents this exact fallback. **Red is reserved
+for `Lost` and the gauge's low end only** (the guide's "one highlighted series" role) —
+never spread across ordinary neutral categories. Dark brown panel surfaces (not white
+cards); chrome/gridlines in white or light warm gray at reduced opacity. The Conversion &
+Results table follows that skill's table spec adapted for a dark surface, with
+`font-variant-numeric: tabular-nums` so figures align. Invoke the
+`anthropic-skills:brown-athletics-brand` skill and read `references/data-viz.md` before
+picking any color — do not guess hex values.
+
+**Route**: `/dashboard`, open to any active linked user (**no** `RequireAdmin` wrapper),
+set as the app's default (`/` redirects here, replacing the current `/contacts` default).
+Also: the Contacts list gets a default sort by last-contacted (oldest/never-contacted
+first) so duplicate outreach is visible at a glance.
+
+**Seed script** (`scripts/seedPipelineStages.ts` or consistent with Task 7's bootstrap
+approach; run once by hand, never wired into the app or Functions exports): writes the
+5-stage pipeline — Created, In Conversation, Verbal Commit (no flags), Lost
+(`isLost: true`), Won (`isWon: true`) — with `order` and `active: true`, colors from the
+existing `frontend/src/lib/badgeColor.ts` token set. Must refuse to overwrite existing
+`opportunityStages` docs without an explicit force flag, and must document how any
+opportunities already pointing at old stage IDs should be re-pointed.
+
+**Verification**: rules tests green (existing 66 + new `activities` coverage, with the
+`users` assertions updated not weakened); pure-function unit tests for every aggregation
+including the edge cases in the design doc's Verification section (first-activity-is-a-call
+→ Initial Outreach not Calls; later Other-type → Follow-ups; `wonAt` unchanged on a
+later unrelated edit; `lostAt` cleared on reopen; Season boundary on both sides of Aug 1;
+zero-denominator win rate and conversion rate); manual emulator walk covering a Log Contact
+writing both docs in one batch, all five period presets rendering correctly, and two
+different signed-in users both resolving rep names under the widened `users` rule. Commit.
+
+## Task 9: Contact Upload UI
+
+**Depends on**: Task 4 (`commitImport`/`revertImportBatch`, already built and tested),
+Tasks 5-6 (shell, components, contact views).
+
+**Goal**: The frontend for the already-built CSV import backend.
+
+**Files to create** (`frontend/src/features/import/`, replacing the placeholder page): a
+4-step flow — file picker (PapaParse, add as a dependency) → column mapping (detected
+headers → Contact fields, including the status and last-contact dropdowns) → preview
+(flag rows missing both name and email/phone, **mirroring `commitImport`'s own row-skip
+rule** so UI and backend agree — read that function, don't reimplement a near-miss) →
+commit (call `commitImport`, show created/updated/possible-duplicate/error counts) → an
+"Undo this import" action using the batch ID just returned.
+
+**Note**: sport-per-row is deliberately NOT supported in this pass — that decision is
+still open with the user (see the design doc's Task 9 section). Do not invent a default.
+
+**Verification**: manual emulator walk — import a small CSV including an intentional
+name-only near-duplicate; confirm it's flagged rather than auto-merged; confirm the counts
+are accurate; exercise the undo action and confirm created contacts are removed. Component
+tests for the mapping and preview steps. Commit.
+
+## Task 10: Global Search & Duplicate Resolution
+
+**Depends on**: Task 4 (search-token triggers, already maintaining `nameLower`/
+`searchTokens`), Task 9 (produces the flagged duplicates the worklist resolves).
+
+**Goal**: Find any contact instantly; resolve the duplicates import flags.
+
+- **Global search**: replace the `AppShell` placeholder input with a real debounced
+  (~250ms) query — `nameLower` prefix range for as-you-type, `searchTokens`
+  `array-contains` for email/phone — across both `contacts` and `organizations`, results
+  merged/deduplicated/labeled by type, each linking to its detail page. No schema or
+  backend work needed. **Note**: `frontend/src/lib/firestore/organizationSearch.ts`
+  already implements exactly this prefix-range pattern (including the `` terminator)
+  — read and reuse that approach rather than deriving it again.
+- **Duplicates worklist** (`frontend/src/features/duplicates/`, replacing the stub): list
+  contacts where `duplicateReviewStatus == 'flagged'` (uses the existing composite index),
+  each beside its `possibleDuplicateOf` target for comparison. Two actions: "Not a
+  duplicate" (clears the flag) and "Confirm duplicate" (sets `mergedInto`, excluding the
+  losing record from lists/search). Every user can view; the two resolving actions are
+  admin-only per the existing already-reviewed rules — the UI should not offer them to a
+  non-admin, and the rules remain the real enforcement.
+
+**Verification**: search finds a contact by partial name, by email, and by organization
+name; a merged contact disappears from default lists/search; both worklist actions work
+for an admin and are unavailable to a rep. Commit.
 
 ---
 
@@ -637,6 +752,16 @@ proceeds. Commit.
 - Task 6's dispatch should be told the exact hook/context names Task 5 exposed
   (`CurrentUserProvider`, the shell route structure) once Task 5 completes — do not let
   Task 6 re-derive them from scratch.
-- Task 7's Duplicates worklist depends on at least one real flagged contact existing to
-  verify against; if Task 4's tests didn't leave one in a state Task 7 can reach, Task 7's
-  verification should seed one via the emulator rather than skipping that check.
+- Task 8 changes the app's default route away from `/contacts`; Task 10's search work
+  touches `AppShell` too. If both are in flight, sequence Task 8's shell change first.
+- Task 10's Duplicates worklist needs at least one genuinely flagged contact to verify
+  against — Task 9's import flow is what produces them. If none exist when Task 10 runs,
+  its verification should seed one via the emulator rather than skipping the check.
+- The `linkAccount` Timestamp-serialization fix (returns `{_seconds,_nanoseconds}` rather
+  than the declared `{seconds,nanoseconds}` shape) was carried in the OLD Task 7 brief,
+  which this revision replaced. It is still unfixed and still real. It only matters where
+  `User.createdAt`/`linkedAt` are actually displayed — no task in this revision displays
+  them, so it is not folded into any task here. Do not lose it: if any future work
+  surfaces those fields, fix it there (re-serialize in `linkAccount.ts` before returning,
+  plus an assertion in `linkAccount.test.ts` that the returned shape matches `shared`'s
+  `FirestoreTimestamp`).
