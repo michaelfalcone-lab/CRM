@@ -52,14 +52,13 @@ export function AppRoutes() {
           </RequireAdmin>
         }
       />
-      <Route
-        path="/duplicates"
-        element={
-          <RequireAdmin>
-            <DuplicatesPage />
-          </RequireAdmin>
-        }
-      />
+      {/* Not RequireAdmin-wrapped: every active user may view the
+          Duplicates worklist (Task 10) — this build has no read-visibility
+          gates, and the two records-comparison view is useful context for
+          any rep. `DuplicatesPage` itself gates the two resolving actions
+          to admins only, matching `firestore.rules`' `duplicateFieldsUnchanged()`
+          restriction. */}
+      <Route path="/duplicates" element={<DuplicatesPage />} />
       <Route path="*" element={<Navigate to="/dashboard" replace />} />
     </Routes>
   )

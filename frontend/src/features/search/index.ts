@@ -1,1 +1,1 @@
-export {}
+export { GlobalSearch } from './GlobalSearch'

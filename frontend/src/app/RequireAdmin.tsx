@@ -8,7 +8,7 @@ export interface RequireAdminProps {
 
 /**
  * Route guard for the admin-only pages (Users, Statuses, Opportunity
- * Stages, Duplicates). `AuthProvider` already guarantees `status ===
+ * Stages). `AuthProvider` already guarantees `status ===
  * 'ready'` for anything mounted under the app shell (this is only ever
  * rendered inside it), but `user` is still typed nullable — guard rather
  * than assert past a `!`, and redirect a non-admin (or, defensively, a

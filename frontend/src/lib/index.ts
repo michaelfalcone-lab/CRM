@@ -29,6 +29,13 @@ export {
 export { useOrganizationSearch } from './firestore/organizationSearch'
 
 export {
+  useGlobalSearch,
+  mergeGlobalSearchResults,
+  type GlobalSearchResult,
+  type GlobalSearchResultType,
+} from './firestore/globalSearch'
+
+export {
   useOpportunitiesForContact,
   useOpportunitiesForOrganization,
   createOpportunity,

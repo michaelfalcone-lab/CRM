@@ -51,10 +51,13 @@ describe('AppShell', () => {
     expect(screen.getByRole('link', { name: 'Contacts' })).toBeInTheDocument()
     expect(screen.getByRole('link', { name: 'Organizations' })).toBeInTheDocument()
     expect(screen.getByRole('link', { name: 'Import' })).toBeInTheDocument()
+    // Duplicates is visible to every active user (Task 10) — this build has
+    // no read-visibility gates, only the worklist's two resolving actions
+    // are admin-only (gated inside DuplicatesPage itself, not the nav/route).
+    expect(screen.getByRole('link', { name: 'Duplicates' })).toBeInTheDocument()
     expect(screen.queryByRole('link', { name: 'Users' })).not.toBeInTheDocument()
     expect(screen.queryByRole('link', { name: 'Statuses' })).not.toBeInTheDocument()
     expect(screen.queryByRole('link', { name: 'Opportunity Stages' })).not.toBeInTheDocument()
-    expect(screen.queryByRole('link', { name: 'Duplicates' })).not.toBeInTheDocument()
   })
 
   it('shows the admin-only nav items for an admin user', () => {
