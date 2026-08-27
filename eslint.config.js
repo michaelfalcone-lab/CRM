@@ -29,5 +29,18 @@ export default tseslint.config(
         ...globals.node,
       },
     },
+    rules: {
+      // Underscore-prefixed parameters are intentionally unused — the
+      // near-universal convention. Without this, "fixing" the warning by
+      // deleting the parameter can break code that depends on the function's
+      // arity: a `(..._args: unknown[]) => ...` rest parameter is what lets
+      // callers spread into it, so removing it turns a lint warning into a
+      // TS2556 compile error that `vitest` (which does not typecheck) still
+      // reports as green. That exact sequence happened here once already.
+      '@typescript-eslint/no-unused-vars': [
+        'error',
+        { argsIgnorePattern: '^_', varsIgnorePattern: '^_', caughtErrorsIgnorePattern: '^_' },
+      ],
+    },
   },
 )

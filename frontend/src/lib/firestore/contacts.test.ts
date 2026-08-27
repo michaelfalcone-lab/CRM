@@ -21,7 +21,7 @@ const docMock = vi.fn((...args: unknown[]) => ({ __doc: args.slice(1) }))
 const batchUpdateMock = vi.fn()
 const batchSetMock = vi.fn()
 const batchCommitMock = vi.fn()
-const writeBatchMock = vi.fn(() => ({
+const writeBatchMock = vi.fn((..._args: unknown[]) => ({
   update: batchUpdateMock,
   set: batchSetMock,
   commit: batchCommitMock,
