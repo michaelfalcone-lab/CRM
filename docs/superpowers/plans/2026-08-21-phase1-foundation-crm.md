@@ -553,7 +553,7 @@ Run the bootstrap path twice against the emulator and confirm the second run is 
 Confirm `npm run test:rules` and `npm run test:functions` still pass (66 and 46
 respectively at last count). Commit.
 
-## Task 8: Dashboard, Activity Logging & Pipeline Configuration
+## Task 8: Activity Log, Pipeline Schema & Seed Data
 
 **Depends on**: Task 7 (deploy gate exists before new features land), Tasks 4-6 (Contacts/
 Opportunities data and UI, search-token triggers).
@@ -613,6 +613,34 @@ that field still feeds `commitImport` and the manual contact-edit form and must 
 change) **and** one new `activities` doc, **in a single `writeBatch`** so they cannot
 partially fail. Manual edits to `lastContactMode`/`lastContactDate` via the contact edit
 form must NOT create an activity — only the dedicated Log Contact action does.
+
+
+**Seed script** (`scripts/seedPipelineStages.ts` or consistent with Task 7's bootstrap
+approach; run once by hand, never wired into the app or Functions exports): writes the
+5-stage pipeline — Created, In Conversation, Verbal Commit (no flags), Lost
+(`isLost: true`), Won (`isWon: true`) — with `order` and `active: true`, colors from the
+existing `frontend/src/lib/badgeColor.ts` token set. Must refuse to overwrite existing
+`opportunityStages` docs without an explicit force flag, and must document how any
+opportunities already pointing at old stage IDs should be re-pointed.
+
+**Verification for Task 8**: `npm run test:rules` green — the existing 66 tests still pass
+with the `users` read assertions UPDATED (not deleted) to match the widened policy, plus a
+new `activities` block (owner-create-allow, other-owner-create-deny,
+admin-create-any-owner-allow, read-allow-for-any-active-user, delete-admin-only,
+inactive/unlinked-denied). `npm run test:functions` green. Unit tests for the
+`ActivityType`→`LastContactMode` mapping and for `wonAt`/`lostAt` transition logic
+covering: set on entering a won stage; NOT overwritten when the opportunity is edited
+again while still won; cleared when moved back to an open stage; the lost-side equivalents.
+Manual emulator check: use the Log Contact action and confirm the contact update AND the
+new `activities` doc both land, in one batch. Run the seed script against the emulator and
+inspect the written `opportunityStages` docs. Commit.
+
+## Task 8b: Sales Output Dashboard
+
+**Depends on**: Task 8 (needs `activities`, `wonAt`/`lostAt`, the 5 seeded stages, and the
+widened `users` read rule to resolve rep names).
+
+**Goal**: The four-widget dashboard from the approved mockup, period-scoped.
 
 **Time period** — a `{ preset, start, end }` selection (`'overall' | 'today' | 'week' |
 'month' | 'season' | 'custom'`) lives in `DashboardPage`, above the fetching hook;
@@ -676,22 +704,16 @@ set as the app's default (`/` redirects here, replacing the current `/contacts` 
 Also: the Contacts list gets a default sort by last-contacted (oldest/never-contacted
 first) so duplicate outreach is visible at a glance.
 
-**Seed script** (`scripts/seedPipelineStages.ts` or consistent with Task 7's bootstrap
-approach; run once by hand, never wired into the app or Functions exports): writes the
-5-stage pipeline — Created, In Conversation, Verbal Commit (no flags), Lost
-(`isLost: true`), Won (`isWon: true`) — with `order` and `active: true`, colors from the
-existing `frontend/src/lib/badgeColor.ts` token set. Must refuse to overwrite existing
-`opportunityStages` docs without an explicit force flag, and must document how any
-opportunities already pointing at old stage IDs should be re-pointed.
-
-**Verification**: rules tests green (existing 66 + new `activities` coverage, with the
-`users` assertions updated not weakened); pure-function unit tests for every aggregation
-including the edge cases in the design doc's Verification section (first-activity-is-a-call
-→ Initial Outreach not Calls; later Other-type → Follow-ups; `wonAt` unchanged on a
-later unrelated edit; `lostAt` cleared on reopen; Season boundary on both sides of Aug 1;
-zero-denominator win rate and conversion rate); manual emulator walk covering a Log Contact
-writing both docs in one batch, all five period presets rendering correctly, and two
-different signed-in users both resolving rep names under the widened `users` rule. Commit.
+**Verification for Task 8b**: pure-function unit tests for every aggregation, covering the
+edge cases explicitly: a contact whose only activity in the period is a call must land in
+Initial Outreach, NOT Calls; a later "Other"-type touch lands in Follow-ups; a rep with
+zero activities renders as an empty row rather than crashing or being omitted; win rate
+and conversion rate with a zero denominator; and the Season boundary computed correctly on
+both sides of Jul 31/Aug 1. Manual emulator walk: all five period presets render every
+widget correctly against seeded data, and two different signed-in users (one rep, one
+admin) both see identical output with rep names resolving under the widened `users` rule.
+Confirm both stacked charts show a real numeric axis with gridlines and per-bar totals.
+Commit.
 
 ## Task 9: Contact Upload UI
 
