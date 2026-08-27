@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type KeyboardEvent } from 'react'
+import { useEffect, useRef, useState, type KeyboardEvent, type MouseEvent as ReactMouseEvent } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { useGlobalSearch, type GlobalSearchResult } from '../../lib'
 import styles from './GlobalSearch.module.css'
@@ -37,7 +37,16 @@ export function GlobalSearch() {
     setOpen(value.trim() !== '')
   }
 
-  function handleSelect(result: GlobalSearchResult) {
+  function handleSelect(event: ReactMouseEvent<HTMLAnchorElement>, result: GlobalSearchResult) {
+    // The `<Link>` below already navigates on click via its own internal
+    // handler — without `preventDefault()` here, this handler's explicit
+    // `navigate()` call and the Link's own navigation both fire for the
+    // same click, pushing two history entries for one selection (so the
+    // browser Back button needs two presses to leave the page it lands
+    // on). `preventDefault()` stops Link's internal handler from also
+    // navigating (it checks `event.defaultPrevented` before acting), so
+    // exactly one navigation happens.
+    event.preventDefault()
     setTerm('')
     setOpen(false)
     navigate(result.path)
@@ -82,7 +91,7 @@ export function GlobalSearch() {
                 role="option"
                 aria-selected={false}
                 className={styles.resultRow}
-                onClick={() => handleSelect(result)}
+                onClick={(event) => handleSelect(event, result)}
               >
                 <span className={styles.resultLabel}>{result.label}</span>
                 <span className={styles.resultType}>

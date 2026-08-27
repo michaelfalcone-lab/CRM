@@ -8,7 +8,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { MemoryRouter } from 'react-router-dom'
+import { createMemoryRouter, MemoryRouter, RouterProvider } from 'react-router-dom'
 import { GlobalSearch } from './GlobalSearch'
 
 const useGlobalSearchMock = vi.fn()
@@ -97,6 +97,43 @@ describe('GlobalSearch', () => {
 
     expect(input).toHaveValue('')
     expect(screen.queryByRole('listbox')).not.toBeInTheDocument()
+  })
+
+  it('navigates exactly once per selection (regression: Link + the explicit navigate() call must not both fire)', async () => {
+    // A real data router (not just MemoryRouter/mocked navigate) so this
+    // observes actual navigation events rather than which internal
+    // function happened to be called — a `<Link>`'s own click handling
+    // and an explicit `navigate()` call both ultimately go through the
+    // same router, so counting router state transitions catches a double
+    // navigation regardless of which code path caused it.
+    useGlobalSearchMock.mockReturnValue({
+      results: [{ id: 'c-1', type: 'contact', label: 'Jamie Rivers', secondary: null, path: '/contacts/c-1' }],
+      loading: false,
+      error: null,
+    })
+    const user = userEvent.setup()
+
+    const router = createMemoryRouter(
+      [
+        { path: '/', element: <GlobalSearch /> },
+        { path: '/contacts/:id', element: <div>Contact detail</div> },
+      ],
+      { initialEntries: ['/'] },
+    )
+
+    let navigationCount = 0
+    router.subscribe(() => {
+      navigationCount += 1
+    })
+
+    render(<RouterProvider router={router} />)
+
+    const input = screen.getByRole('searchbox', { name: /search/i })
+    await user.type(input, 'jamie')
+    await user.click(screen.getByRole('option', { name: /Jamie Rivers/ }))
+
+    expect(router.state.location.pathname).toBe('/contacts/c-1')
+    expect(navigationCount).toBe(1)
   })
 
   it('closes the dropdown on Escape without clearing the typed term', async () => {
