@@ -142,4 +142,27 @@ describe('DuplicateRow', () => {
     renderRow(true)
     expect(screen.getByText(/does not move this contact.s opportunities or notes/i)).toBeInTheDocument()
   })
+
+  it('describes the match reason accurately — it must not claim phone was checked and found no match (Finding 3 regression)', () => {
+    // `functions/src/lib/identityMatching.ts`'s Tier 2 phone check is
+    // skipped entirely whenever the row has any email value, so two
+    // contacts sharing an identical phone number can still be flagged
+    // Tier-3 (name-only) without phone ever being evaluated. The copy must
+    // not assert "no shared ... phone on record" as a verified fact.
+    renderRow(true)
+    expect(screen.queryByText(/no shared email or phone on record/i)).not.toBeInTheDocument()
+    expect(screen.getByText(/phone wasn.t checked/i)).toBeInTheDocument()
+  })
+
+  it('surfaces an error and re-enables the buttons if confirming a merge fails (Finding 4 regression)', async () => {
+    confirmDuplicateMergeMock.mockRejectedValue(new Error('merge failed'))
+    const user = userEvent.setup()
+    renderRow(true)
+
+    await user.click(screen.getByRole('button', { name: 'Confirm duplicate' }))
+
+    expect(await screen.findByText('merge failed')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Confirm duplicate' })).not.toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Not a duplicate' })).not.toBeDisabled()
+  })
 })

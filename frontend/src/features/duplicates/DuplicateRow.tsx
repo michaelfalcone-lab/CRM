@@ -118,8 +118,9 @@ export function DuplicateRow({ contact, isAdmin, owners, currentUserUid }: Dupli
       </div>
 
       <p className={styles.matchReason}>
-        Matched on name only during import (no shared email or phone on record) — review
-        before merging.
+        Matched on name only during import. Email didn&rsquo;t match, and phone wasn&rsquo;t
+        checked &mdash; the matcher only compares phone numbers when neither contact has an
+        email on file. Review before merging.
       </p>
 
       {isAdmin ? (
