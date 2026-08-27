@@ -708,8 +708,11 @@ rule** so UI and backend agree — read that function, don't reimplement a near-
 commit (call `commitImport`, show created/updated/possible-duplicate/error counts) → an
 "Undo this import" action using the batch ID just returned.
 
-**Note**: sport-per-row is deliberately NOT supported in this pass — that decision is
-still open with the user (see the design doc's Task 9 section). Do not invent a default.
+**Note**: sport-per-row is NOT supported in CSV upload — **resolved with the user, no
+longer an open question**: this aspect isn't needed. Sport belongs to an Opportunity and
+is set per-contact through the Opportunity UI already built in Task 6. Do not add a sport
+column to the mapping step, do not extend `commitImport` to create Opportunities, and do
+not re-raise this as a question.
 
 **Verification**: manual emulator walk — import a small CSV including an intentional
 name-only near-duplicate; confirm it's flagged rather than auto-merged; confirm the counts
