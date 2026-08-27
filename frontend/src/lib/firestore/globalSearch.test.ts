@@ -25,13 +25,21 @@ const whereMock = vi.fn((...args: unknown[]) => ({ __where: args }))
 const collectionMock = vi.fn((...args: unknown[]) => ({ __collection: args.slice(1) }))
 const orderByMock = vi.fn((...args: unknown[]) => ({ __orderBy: args }))
 const limitMock = vi.fn((...args: unknown[]) => ({ __limit: args }))
+/** Unlike the other mocks here, `query()` actually threads its constraints
+ * through onto the returned object (`__ref` + `__constraints`) rather than
+ * just returning the collection ref unchanged — the Finding 1 regression
+ * test below needs to see which constraints a given `getDocs` call's query
+ * was built with, to faithfully reproduce real Firestore's
+ * equality-filter-then-limit semantics instead of just asserting on the
+ * `where`/`limit` mocks' call args in isolation. */
+const queryMock = vi.fn((...args: unknown[]) => ({ __ref: args[0], __constraints: args.slice(1) }))
 
 vi.mock('firebase/firestore', () => ({
   collection: (...args: unknown[]) => collectionMock(...args),
   getDocs: (...args: unknown[]) => getDocsMock(...args),
   limit: (...args: unknown[]) => limitMock(...args),
   orderBy: (...args: unknown[]) => orderByMock(...args),
-  query: vi.fn((ref: unknown) => ref),
+  query: (...args: unknown[]) => queryMock(...args),
   where: (...args: unknown[]) => whereMock(...args),
 }))
 
@@ -85,6 +93,63 @@ beforeEach(() => {
   vi.useFakeTimers()
   getDocsMock.mockResolvedValue({ docs: [] })
 })
+
+interface FakeQuery {
+  __ref: { __collection: string[] }
+  __constraints: unknown[]
+}
+
+/** A minimal in-memory Firestore stand-in that actually applies a query's
+ * `where`/`orderBy`/`limit` constraints (in that priority) to a fixture
+ * dataset, the same way the real backend would: equality/range/
+ * array-contains filters first, then ordering, then the result-count cap
+ * last. This is what makes the Finding 1 regression test below meaningful
+ * — with the plain per-call `getDocsMock.mockResolvedValueOnce(...)` used
+ * elsewhere in this file, the mock can't distinguish "the query filtered
+ * mergedInto before capping results" from "it didn't," since the resolved
+ * value is hardcoded regardless of the query's actual constraints. */
+function fakeFirestoreQuery<T extends { id: string }>(dataset: T[], q: FakeQuery) {
+  let docs = [...dataset]
+  let limitN = Infinity
+  let orderField: string | null = null
+
+  for (const constraint of q.__constraints) {
+    if (!constraint || typeof constraint !== 'object') continue
+    if ('__where' in constraint) {
+      const [field, op, value] = (constraint as { __where: [string, string, unknown] }).__where
+      docs = docs.filter((doc) => {
+        const fieldValue = (doc as unknown as Record<string, unknown>)[field]
+        switch (op) {
+          case '==':
+            return fieldValue === value
+          case '>=':
+            return typeof fieldValue === 'string' && typeof value === 'string' && fieldValue >= value
+          case '<=':
+            return typeof fieldValue === 'string' && typeof value === 'string' && fieldValue <= value
+          case 'array-contains':
+            return Array.isArray(fieldValue) && fieldValue.includes(value)
+          default:
+            return true
+        }
+      })
+    } else if ('__orderBy' in constraint) {
+      orderField = (constraint as { __orderBy: [string] }).__orderBy[0]
+    } else if ('__limit' in constraint) {
+      limitN = (constraint as { __limit: [number] }).__limit[0]
+    }
+  }
+
+  if (orderField) {
+    const field = orderField
+    docs.sort((a, b) =>
+      String((a as unknown as Record<string, unknown>)[field]).localeCompare(
+        String((b as unknown as Record<string, unknown>)[field]),
+      ),
+    )
+  }
+  docs = docs.slice(0, limitN)
+  return { docs: docs.map((doc) => ({ id: doc.id, data: () => doc })) }
+}
 
 afterEach(() => {
   vi.useRealTimers()
@@ -231,6 +296,43 @@ describe('useGlobalSearch', () => {
     })
 
     expect(result.current.results).toEqual([])
+  })
+
+  it('does not hide a live contact behind the per-query result cap when merged records sort ahead of it (Finding 1 regression)', async () => {
+    // 8 merged contacts, alphabetically ahead of 2 live ones, all within the
+    // "acme" prefix range — exactly enough merged records to fill
+    // MAX_RESULTS_PER_QUERY (8) before a naive raw-query limit ever reaches
+    // the live ones. If the `mergedInto` exclusion were only applied after
+    // fetching (the pre-fix behavior), the live contacts would never even
+    // be part of the fetched set and would vanish from search entirely.
+    const mergedDocs = Array.from({ length: 8 }, (_, i) =>
+      contact({ id: `merged-${i}`, nameLower: `acme ${i}`, mergedInto: 'winner' }),
+    )
+    const liveDocs = [
+      contact({ id: 'live-1', nameLower: 'acme z1', mergedInto: null }),
+      contact({ id: 'live-2', nameLower: 'acme z2', mergedInto: null }),
+    ]
+    const contactsDataset = [...mergedDocs, ...liveDocs]
+
+    getDocsMock.mockImplementation((q: unknown) => {
+      const query = q as FakeQuery
+      if (query.__ref.__collection[0] === 'contacts') {
+        return Promise.resolve(fakeFirestoreQuery(contactsDataset, query))
+      }
+      return Promise.resolve({ docs: [] })
+    })
+
+    const { result } = renderHook(() => useGlobalSearch('acme'))
+
+    await act(async () => {
+      vi.advanceTimersByTime(250)
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+
+    const ids = result.current.results.map((r) => r.id)
+    expect(ids).toContain('live-1')
+    expect(ids).toContain('live-2')
   })
 
   it('debounces: does not query again for a rapid follow-up keystroke before the debounce window elapses', async () => {

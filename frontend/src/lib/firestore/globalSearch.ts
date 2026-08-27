@@ -19,6 +19,21 @@
  * surfacing it would let a rep call a prospect who's actually a duplicate
  * of someone else already in the system, which is the exact outcome this
  * feature exists to prevent.
+ *
+ * The `mergedInto == null` exclusion is applied as a real Firestore `where`
+ * constraint on all four queries below, not just client-side after the
+ * fact — each query already caps its raw result set at
+ * `MAX_RESULTS_PER_QUERY`, so filtering only after fetching would let
+ * merged-away records consume result slots ahead of genuinely live ones,
+ * silently hiding a live prospect once enough duplicates share a search
+ * term. This is safe because contact/organization creation (both the
+ * manual-entry paths and `commitImport`) always sets `mergedInto`
+ * explicitly, even to `null` — see `firestore.rules`' `duplicateFieldsUnchanged()`
+ * comment and `frontend/src/lib/firestore/contacts.ts`'s file header for
+ * that invariant. `mergeGlobalSearchResults` below still filters
+ * `mergedInto` too, as a defense-in-depth backstop (e.g. against a doc that
+ * somehow predates the invariant), but the query-level filter is what
+ * actually prevents the hidden-live-record bug.
  */
 import { useEffect, useState } from 'react'
 import { collection, getDocs, limit, orderBy, query, where } from 'firebase/firestore'
@@ -141,6 +156,7 @@ export function useGlobalSearch(term: string): UseGlobalSearchResult {
 
       const contactsPrefixQuery = query(
         collection(db, 'contacts'),
+        where('mergedInto', '==', null),
         orderBy('nameLower'),
         where('nameLower', '>=', trimmed),
         where('nameLower', '<=', upperBound),
@@ -148,11 +164,13 @@ export function useGlobalSearch(term: string): UseGlobalSearchResult {
       )
       const contactsTokenQuery = query(
         collection(db, 'contacts'),
+        where('mergedInto', '==', null),
         where('searchTokens', 'array-contains', trimmed),
         limit(MAX_RESULTS_PER_QUERY),
       )
       const orgsPrefixQuery = query(
         collection(db, 'organizations'),
+        where('mergedInto', '==', null),
         orderBy('nameLower'),
         where('nameLower', '>=', trimmed),
         where('nameLower', '<=', upperBound),
@@ -160,6 +178,7 @@ export function useGlobalSearch(term: string): UseGlobalSearchResult {
       )
       const orgsTokenQuery = query(
         collection(db, 'organizations'),
+        where('mergedInto', '==', null),
         where('searchTokens', 'array-contains', trimmed),
         limit(MAX_RESULTS_PER_QUERY),
       )
