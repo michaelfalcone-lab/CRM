@@ -22,6 +22,37 @@ export type Role = 'admin' | 'rep'
 /** How the most recent contact interaction was made. */
 export type LastContactMode = 'Email' | 'Phone' | 'In-Person' | 'Text' | 'Other'
 
+/**
+ * The 7 rep-activity types the sales-output dashboard buckets and counts.
+ * Distinct from (and richer than) `LastContactMode` — `logContact` writes
+ * both: an `Activity` doc with the precise `ActivityType`, and the legacy
+ * `Contact.lastContactMode` via `ACTIVITY_TYPE_TO_LAST_CONTACT_MODE`'s
+ * many-to-one mapping (`frontend/src/lib/firestore/contacts.ts`), since
+ * `commitImport` and the manual contact-edit form still read/write the
+ * 5-value legacy field.
+ */
+export type ActivityType =
+  | 'Email'
+  | 'Inbound Call'
+  | 'Outbound Call - Talked To'
+  | 'Outbound Call - VM'
+  | 'Onsite Appointment'
+  | 'Seat Visit'
+  | 'Other'
+
+/** The controlled vocabulary for `Opportunity.lostReason`'s dropdown (see
+ * `LOST_REASONS` in `./constants` for the ordered list this type mirrors).
+ * `Opportunity.lostReason` itself stays a plain `string`, not this type —
+ * see that field's doc comment for why. */
+export type LostReason =
+  | 'Downgrade'
+  | 'Not Approved'
+  | 'Past Poor Fan Experience'
+  | 'Too Many Games'
+  | 'Cost'
+  | 'Game Times'
+  | 'Other'
+
 /** Reserved identity-matching fields, shared by Contacts and Organizations,
  * for the future Paciolan sync (unused until phase 6). */
 export interface ExternalIds {
@@ -151,6 +182,13 @@ export interface OpportunityStage {
   order: number
   active: boolean
   color: string
+  /** At most one active stage is expected to carry each of these at a
+   * time (the pipeline's terminal "won" stage), but nothing enforces that
+   * structurally — `updateOpportunity`'s wonAt/lostAt maintenance reads
+   * whichever stage doc the opportunity is being moved to/from. */
+  isWon?: boolean
+  /** The pipeline's terminal "lost" stage. See `isWon`'s comment. */
+  isLost?: boolean
   createdAt: FirestoreTimestamp
   updatedAt: FirestoreTimestamp
 }
@@ -168,9 +206,54 @@ export interface Opportunity {
   stage: string
   /** Optional single text field — not a subcollection. */
   note?: string
+  /** Free-text reason captured when the opportunity moves to a
+   * `isLost: true` stage. One of `LOST_REASONS`, in UI, but stored as a
+   * plain string rather than the narrower union so a retired/renamed
+   * reason value on old data never becomes an invalid document. */
+  lostReason?: string
+  /** Set by `updateOpportunity` (`frontend/src/lib/firestore/
+   * opportunities.ts`) the moment the opportunity transitions INTO a
+   * stage with `OpportunityStage.isWon === true`, and never overwritten
+   * on a later edit — this is what lets "won this month" mean "actually
+   * closed this month," not "last edited while in a won stage." Cleared
+   * (field deleted) if the opportunity transitions back out to a stage
+   * that isn't `isWon`. */
+  wonAt?: FirestoreTimestamp
+  /** Same contract as `wonAt`, for `OpportunityStage.isLost === true`. */
+  lostAt?: FirestoreTimestamp
   ownerId: string
   createdAt: FirestoreTimestamp
   updatedAt: FirestoreTimestamp
+  createdBy: string
+}
+
+/**
+ * `activities/{activityId}` (auto-ID, top-level — NOT a subcollection of
+ * `contacts`, so the sales-output dashboard can query/aggregate across
+ * every rep's activity without a collection-group query). One doc per
+ * rep-initiated contact interaction. Written only by the dedicated "Log
+ * Contact" action (`frontend/src/lib/firestore/contacts.ts`'s
+ * `logContact`, in the same `writeBatch` as the `Contact.lastContactDate`/
+ * `lastContactMode` update it also performs) — never by the plain
+ * contact-edit form, so correcting a typo in `lastContactMode` can never
+ * inflate a rep's activity counts.
+ */
+export interface Activity {
+  contactId: string
+  /** Denormalized copy of the contact's full name at the time of logging,
+   * so the dashboard never needs a per-activity contact lookup. */
+  contactName: string
+  /** Denormalized copy of the contact's `organizationId` at the time of
+   * logging (mirrors `Contact.organizationId`'s nullability). */
+  organizationId: string | null
+  type: ActivityType
+  ownerId: string
+  note?: string
+  /** When the interaction actually happened (the Log Contact form's date
+   * field) — distinct from `createdAt`, which is when the doc was
+   * written. The dashboard's period filters range-query this field. */
+  occurredAt: FirestoreTimestamp
+  createdAt: FirestoreTimestamp
   createdBy: string
 }
 

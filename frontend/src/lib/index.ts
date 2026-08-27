@@ -9,9 +9,11 @@ export {
   createContact,
   updateContact,
   logContact,
+  ACTIVITY_TYPE_TO_LAST_CONTACT_MODE,
   type ContactFilters,
   type CreateContactInput,
   type UpdateContactInput,
+  type LogContactContext,
 } from './firestore/contacts'
 
 export {

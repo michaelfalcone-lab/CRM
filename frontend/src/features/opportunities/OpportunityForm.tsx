@@ -79,21 +79,28 @@ export function OpportunityForm({
   const onSubmit = handleSubmit(async (values) => {
     try {
       if (existing) {
-        await updateOpportunity(existing.id, {
-          sport: values.sport as Sport,
-          stage: values.stage,
-          note: values.note ?? null,
-        })
+        await updateOpportunity(
+          existing.id,
+          {
+            sport: values.sport as Sport,
+            stage: values.stage,
+            note: values.note ?? null,
+          },
+          stages,
+        )
       } else {
-        await createOpportunity({
-          contactId: values.contactId,
-          organizationId,
-          sport: values.sport as Sport,
-          stage: values.stage,
-          note: values.note || undefined,
-          ownerId: currentUserUid,
-          createdBy: currentUserUid,
-        })
+        await createOpportunity(
+          {
+            contactId: values.contactId,
+            organizationId,
+            sport: values.sport as Sport,
+            stage: values.stage,
+            note: values.note || undefined,
+            ownerId: currentUserUid,
+            createdBy: currentUserUid,
+          },
+          stages,
+        )
       }
       onSaved()
     } catch (err) {

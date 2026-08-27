@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
-import type { LastContactMode } from 'shared'
+import { ACTIVITY_TYPES, type ActivityType } from 'shared'
 import { Badge, Button, Card, Select } from '../../components/ui'
 import { useCurrentUser } from '../../app/AuthProvider'
 import {
@@ -16,8 +16,6 @@ import {
 import { OpportunityList } from '../opportunities'
 import { ContactNotesPanel } from './ContactNotesPanel'
 import styles from './ContactDetailView.module.css'
-
-const LAST_CONTACT_MODES: LastContactMode[] = ['Email', 'Phone', 'In-Person', 'Text', 'Other']
 
 function formatDate(ts: { seconds: number } | undefined): string {
   if (!ts) return 'Never'
@@ -41,7 +39,7 @@ export function ContactDetailView() {
 
   const [logging, setLogging] = useState(false)
   const [logDate, setLogDate] = useState(() => new Date().toISOString().slice(0, 10))
-  const [logMode, setLogMode] = useState<LastContactMode>('Phone')
+  const [logMode, setLogMode] = useState<ActivityType>('Outbound Call - Talked To')
   const [logSubmitting, setLogSubmitting] = useState(false)
 
   if (loading) return <Card>Loading…</Card>
@@ -52,9 +50,15 @@ export function ContactDetailView() {
 
   async function handleLogContact() {
     if (logSubmitting) return
+    if (!user?.authUid) return
     setLogSubmitting(true)
     try {
-      await logContact(contact!.id, logMode, new Date(logDate))
+      await logContact(contact!.id, logMode, new Date(logDate), {
+        contactName: `${contact!.firstName} ${contact!.lastName}`,
+        organizationId: contact!.organizationId,
+        ownerId: contact!.ownerId,
+        createdBy: user.authUid,
+      })
       setLogging(false)
     } finally {
       setLogSubmitting(false)
@@ -119,9 +123,9 @@ export function ContactDetailView() {
                 id="log-contact-mode"
                 name="logContactMode"
                 label="Mode"
-                options={LAST_CONTACT_MODES.map((m) => ({ value: m, label: m }))}
+                options={ACTIVITY_TYPES.map((m) => ({ value: m, label: m }))}
                 value={logMode}
-                onChange={(e) => setLogMode(e.target.value as LastContactMode)}
+                onChange={(e) => setLogMode(e.target.value as ActivityType)}
               />
               <Button variant="primary" onClick={() => void handleLogContact()} disabled={logSubmitting}>
                 Save

@@ -46,7 +46,11 @@ service cloud.firestore {
 
     match /users/{userEmail} {
       allow get: if isSignedIn() && callerEmailLower() == userEmail;
-      allow read: if isAdmin();
+      // Deliberately wider than admin-only: every active team member must
+      // be able to resolve every rep's display name (e.g. the sales-output
+      // dashboard's per-rep rows), not just their own. `allow write` stays
+      // admin-only — user docs themselves are still admin-managed.
+      allow read: if isActiveUser();
       allow write: if isAdmin();
     }
 
@@ -83,6 +87,13 @@ service cloud.firestore {
     }
 
     match /opportunities/{opportunityId} {
+      allow read: if isActiveUser();
+      allow create: if isActiveUser() && (isAdmin() || request.resource.data.ownerId == callerUid());
+      allow update: if isAdmin() || (ownsRecord() && ownerUnchanged());
+      allow delete: if isAdmin();
+    }
+
+    match /activities/{activityId} {
       allow read: if isActiveUser();
       allow create: if isActiveUser() && (isAdmin() || request.resource.data.ownerId == callerUid());
       allow update: if isAdmin() || (ownsRecord() && ownerUnchanged());

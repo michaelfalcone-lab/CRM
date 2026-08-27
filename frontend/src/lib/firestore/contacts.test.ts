@@ -12,17 +12,27 @@
  *      again).
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { ACTIVITY_TYPES, type LastContactMode } from 'shared'
 
 const addDocMock = vi.fn()
 const updateDocMock = vi.fn()
 const collectionMock = vi.fn((...args: unknown[]) => ({ __collection: args.slice(1) }))
 const docMock = vi.fn((...args: unknown[]) => ({ __doc: args.slice(1) }))
+const batchUpdateMock = vi.fn()
+const batchSetMock = vi.fn()
+const batchCommitMock = vi.fn()
+const writeBatchMock = vi.fn((..._args: unknown[]) => ({
+  update: batchUpdateMock,
+  set: batchSetMock,
+  commit: batchCommitMock,
+}))
 
 vi.mock('firebase/firestore', () => ({
   addDoc: (...args: unknown[]) => addDocMock(...args),
   updateDoc: (...args: unknown[]) => updateDocMock(...args),
   collection: (...args: unknown[]) => collectionMock(...args),
   doc: (...args: unknown[]) => docMock(...args),
+  writeBatch: (...args: unknown[]) => writeBatchMock(...args),
   onSnapshot: vi.fn(),
   orderBy: vi.fn(),
   query: vi.fn((ref: unknown) => ref),
@@ -36,12 +46,13 @@ vi.mock('firebase/firestore', () => ({
 
 vi.mock('../firebase', () => ({ db: {} }))
 
-import { createContact, logContact, updateContact } from './contacts'
+import { ACTIVITY_TYPE_TO_LAST_CONTACT_MODE, createContact, logContact, updateContact } from './contacts'
 
 beforeEach(() => {
   vi.clearAllMocks()
   addDocMock.mockResolvedValue({ id: 'contact-new-1' })
   updateDocMock.mockResolvedValue(undefined)
+  batchCommitMock.mockResolvedValue(undefined)
 })
 
 describe('createContact', () => {
@@ -142,11 +153,95 @@ describe('updateContact', () => {
   })
 })
 
+describe('ACTIVITY_TYPE_TO_LAST_CONTACT_MODE', () => {
+  const LEGACY_MODES: LastContactMode[] = ['Email', 'Phone', 'In-Person', 'Text', 'Other']
+
+  it('maps every one of the 7 ActivityType values to a legacy mode — no value unmapped', () => {
+    for (const type of ACTIVITY_TYPES) {
+      expect(LEGACY_MODES).toContain(ACTIVITY_TYPE_TO_LAST_CONTACT_MODE[type])
+    }
+    expect(Object.keys(ACTIVITY_TYPE_TO_LAST_CONTACT_MODE).sort()).toEqual(
+      [...ACTIVITY_TYPES].sort(),
+    )
+  })
+
+  it('collapses every call variant onto Phone', () => {
+    expect(ACTIVITY_TYPE_TO_LAST_CONTACT_MODE['Inbound Call']).toBe('Phone')
+    expect(ACTIVITY_TYPE_TO_LAST_CONTACT_MODE['Outbound Call - Talked To']).toBe('Phone')
+    expect(ACTIVITY_TYPE_TO_LAST_CONTACT_MODE['Outbound Call - VM']).toBe('Phone')
+  })
+
+  it('collapses onsite/seat-visit onto In-Person', () => {
+    expect(ACTIVITY_TYPE_TO_LAST_CONTACT_MODE['Onsite Appointment']).toBe('In-Person')
+    expect(ACTIVITY_TYPE_TO_LAST_CONTACT_MODE['Seat Visit']).toBe('In-Person')
+  })
+
+  it('maps Email and Other 1:1', () => {
+    expect(ACTIVITY_TYPE_TO_LAST_CONTACT_MODE.Email).toBe('Email')
+    expect(ACTIVITY_TYPE_TO_LAST_CONTACT_MODE.Other).toBe('Other')
+  })
+})
+
 describe('logContact', () => {
-  it('sets lastContactDate/lastContactMode', async () => {
-    await logContact('contact-1', 'Phone', new Date('2026-01-01T00:00:00Z'))
-    const payload = updateDocMock.mock.calls[0]![1] as Record<string, unknown>
-    expect(payload.lastContactMode).toBe('Phone')
-    expect(payload.lastContactDate).toBeDefined()
+  const baseContext = {
+    contactName: 'Jane Doe',
+    organizationId: 'org-1',
+    ownerId: 'rep-1',
+    createdBy: 'rep-1',
+  }
+
+  it('writes the legacy contact fields and the new activity doc in a single writeBatch', async () => {
+    await logContact('contact-1', 'Onsite Appointment', new Date('2026-01-01T00:00:00Z'), baseContext)
+
+    expect(writeBatchMock).toHaveBeenCalledTimes(1)
+    expect(batchCommitMock).toHaveBeenCalledTimes(1)
+    // The write must be atomic: a plain updateDoc/addDoc call would let the
+    // two writes partially fail independently.
+    expect(updateDocMock).not.toHaveBeenCalled()
+    expect(addDocMock).not.toHaveBeenCalled()
+  })
+
+  it('maps the ActivityType down to the legacy LastContactMode on the contact update', async () => {
+    await logContact('contact-1', 'Onsite Appointment', new Date('2026-01-01T00:00:00Z'), baseContext)
+
+    expect(batchUpdateMock).toHaveBeenCalledTimes(1)
+    const contactPatch = batchUpdateMock.mock.calls[0]![1] as Record<string, unknown>
+    expect(contactPatch.lastContactMode).toBe('In-Person')
+    expect(contactPatch.lastContactDate).toBeDefined()
+  })
+
+  it('sets every required Activity field, denormalized from the passed-in context', async () => {
+    await logContact('contact-1', 'Seat Visit', new Date('2026-01-01T00:00:00Z'), baseContext)
+
+    expect(batchSetMock).toHaveBeenCalledTimes(1)
+    const activityPayload = batchSetMock.mock.calls[0]![1] as Record<string, unknown>
+    expect(activityPayload).toMatchObject({
+      contactId: 'contact-1',
+      contactName: 'Jane Doe',
+      organizationId: 'org-1',
+      type: 'Seat Visit',
+      ownerId: 'rep-1',
+      createdBy: 'rep-1',
+    })
+    expect(activityPayload.occurredAt).toBeDefined()
+    expect(activityPayload.createdAt).toBeDefined()
+  })
+
+  it('omits note from the activity payload when not supplied', async () => {
+    await logContact('contact-1', 'Email', new Date(), baseContext)
+    const activityPayload = batchSetMock.mock.calls[0]![1] as Record<string, unknown>
+    expect(activityPayload).not.toHaveProperty('note')
+  })
+
+  it('trims and includes note when supplied', async () => {
+    await logContact('contact-1', 'Email', new Date(), { ...baseContext, note: '  Left a message  ' })
+    const activityPayload = batchSetMock.mock.calls[0]![1] as Record<string, unknown>
+    expect(activityPayload.note).toBe('Left a message')
+  })
+
+  it('passes organizationId through as null when the contact has no organization', async () => {
+    await logContact('contact-1', 'Email', new Date(), { ...baseContext, organizationId: null })
+    const activityPayload = batchSetMock.mock.calls[0]![1] as Record<string, unknown>
+    expect(activityPayload.organizationId).toBeNull()
   })
 })

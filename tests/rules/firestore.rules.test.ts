@@ -32,6 +32,15 @@
  *   - ownerUnchanged()/duplicateFieldsUnchanged() fail closed (deny) when
  *     the compared field is missing from the document entirely
  *   - isSignedIn() denies when email_verified is false or absent
+ *
+ * Task 8 additions (activities collection + widened users read):
+ *   - activities: owner-create-allow, other-owner-create-deny,
+ *     admin-create-any-owner-allow, update/delete ownership matrix (via
+ *     the shared organizations/contacts/opportunities/activities loops),
+ *     read-allow-for-any-active-user, inactive/unlinked/ghost-denied
+ *   - users/{userEmail}: `allow read` widened from admin-only to
+ *     `isActiveUser()` (every active team member resolves every rep's
+ *     display name for the dashboard) — `allow write` remains admin-only
  */
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
@@ -141,6 +150,19 @@ function opportunityDoc(ownerId: string) {
   }
 }
 
+function activityDoc(ownerId: string) {
+  return {
+    contactId: 'contact-rep',
+    contactName: 'New Contact',
+    organizationId: null,
+    type: 'Email',
+    ownerId,
+    occurredAt: ts(),
+    createdAt: ts(),
+    createdBy: REP_EMAIL,
+  }
+}
+
 async function seedFixtures() {
   await testEnv.withSecurityRulesDisabled(async (context) => {
     const db = context.firestore()
@@ -181,6 +203,7 @@ async function seedFixtures() {
       createdAt: ts(),
     })
     await setDoc(doc(db, 'opportunities', 'opp-rep'), opportunityDoc(REP_UID))
+    await setDoc(doc(db, 'activities', 'activity-rep'), activityDoc(REP_UID))
 
     await setDoc(doc(db, 'importBatches', 'batch-1'), {
       fileName: 'import.csv',
@@ -252,11 +275,45 @@ describe('contacts / organizations reads', () => {
   })
 })
 
-describe('create — ownerId enforcement (organizations, contacts, opportunities)', () => {
+describe('activities', () => {
+  it('any active user can read all activities (dashboard aggregation)', async () => {
+    const db = rep().firestore()
+    await assertSucceeds(getDocs(collection(db, 'activities')))
+    await assertSucceeds(getDoc(doc(db, 'activities', 'activity-rep')))
+  })
+
+  it('admin can read all activities', async () => {
+    const db = admin().firestore()
+    await assertSucceeds(getDocs(collection(db, 'activities')))
+  })
+
+  it('an inactive user is denied reading activities', async () => {
+    const db = inactiveRep().firestore()
+    await assertFails(getDoc(doc(db, 'activities', 'activity-rep')))
+  })
+
+  it('an unlinked user is denied reading activities', async () => {
+    const db = unlinkedRep().firestore()
+    await assertFails(getDoc(doc(db, 'activities', 'activity-rep')))
+  })
+
+  it('an inactive user is denied creating an activity', async () => {
+    const db = inactiveRep().firestore()
+    await assertFails(addDoc(collection(db, 'activities'), activityDoc(INACTIVE_UID)))
+  })
+
+  it('a signed-in user with no matching users doc at all is denied reading activities', async () => {
+    const db = ghost().firestore()
+    await assertFails(getDoc(doc(db, 'activities', 'activity-rep')))
+  })
+})
+
+describe('create — ownerId enforcement (organizations, contacts, opportunities, activities)', () => {
   const cases = [
     { name: 'organizations', build: orgDoc },
     { name: 'contacts', build: contactDoc },
     { name: 'opportunities', build: opportunityDoc },
+    { name: 'activities', build: activityDoc },
   ] as const
 
   for (const c of cases) {
@@ -277,11 +334,12 @@ describe('create — ownerId enforcement (organizations, contacts, opportunities
   }
 })
 
-describe('update / delete — ownership + ownerId immutability (organizations, contacts, opportunities)', () => {
+describe('update / delete — ownership + ownerId immutability (organizations, contacts, opportunities, activities)', () => {
   const fixtures = [
     { name: 'organizations', docId: 'org-rep' },
     { name: 'contacts', docId: 'contact-rep' },
     { name: 'opportunities', docId: 'opp-rep' },
+    { name: 'activities', docId: 'activity-rep' },
   ] as const
 
   for (const f of fixtures) {
@@ -573,7 +631,7 @@ describe('callerEmailLower() normalization', () => {
   })
 })
 
-describe('users/{email} self-get', () => {
+describe('users/{email} read policy', () => {
   it('a user can get their own users doc via get, even when unlinked (authUid mismatch)', async () => {
     // This is the only rule reachable by a signed-in-but-not-yet-linked
     // user — it's what lets the app check "have I been invited yet"
@@ -584,9 +642,45 @@ describe('users/{email} self-get', () => {
     await assertSucceeds(getDoc(doc(db, 'users', UNLINKED_EMAIL)))
   })
 
-  it('a signed-in user is denied getting a different user\'s doc', async () => {
+  // Task 8 deliberately widened `allow read` on `users/{userEmail}` from
+  // admin-only to `isActiveUser()`, so every team member can resolve every
+  // rep's display name for the sales-output dashboard. This replaces what
+  // used to be a `assertFails` case here (see git history) — the policy
+  // change is intentional, not a regression, so the test is updated to
+  // match rather than deleted.
+  it('an active rep CAN now read a different active user\'s doc (widened for dashboard rep-name resolution)', async () => {
     const db = rep().firestore()
-    await assertFails(getDoc(doc(db, 'users', REP2_EMAIL)))
+    await assertSucceeds(getDoc(doc(db, 'users', REP2_EMAIL)))
+  })
+
+  it('an active rep can list all users (to resolve every rep\'s display name for the dashboard)', async () => {
+    const db = rep().firestore()
+    await assertSucceeds(getDocs(collection(db, 'users')))
+  })
+
+  it('admin can read any user\'s doc', async () => {
+    const db = admin().firestore()
+    await assertSucceeds(getDoc(doc(db, 'users', REP_EMAIL)))
+  })
+
+  it('an inactive user is denied reading a different user\'s doc (read still requires isActiveUser())', async () => {
+    const db = inactiveRep().firestore()
+    await assertFails(getDoc(doc(db, 'users', REP_EMAIL)))
+  })
+
+  it('an unlinked user is denied reading a different user\'s doc (read still requires isActiveUser())', async () => {
+    const db = unlinkedRep().firestore()
+    await assertFails(getDoc(doc(db, 'users', REP_EMAIL)))
+  })
+
+  it('a signed-in user with no matching users doc at all is denied reading a different user\'s doc', async () => {
+    const db = ghost().firestore()
+    await assertFails(getDoc(doc(db, 'users', REP_EMAIL)))
+  })
+
+  it('write stays admin-only — unaffected by the read widen', async () => {
+    const db = rep().firestore()
+    await assertFails(updateDoc(doc(db, 'users', REP_EMAIL), { displayName: 'Hijacked' }))
   })
 })
 

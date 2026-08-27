@@ -29,9 +29,10 @@ import {
   Timestamp,
   updateDoc,
   where,
+  writeBatch,
   type QueryConstraint,
 } from 'firebase/firestore'
-import type { Contact, LastContactMode } from 'shared'
+import type { ActivityType, Contact, LastContactMode } from 'shared'
 import { db } from '../firebase'
 import type { WithId } from '../firestoreTypes'
 
@@ -223,8 +224,81 @@ export async function updateContact(id: string, patch: UpdateContactInput): Prom
   await updateDoc(doc(db, 'contacts', id), data)
 }
 
-/** The contact detail page's one dominant primary action: records that the
- * rep just made contact, right now, by the given mode. */
-export async function logContact(id: string, mode: LastContactMode, when: Date): Promise<void> {
-  await updateContact(id, { lastContactDate: when, lastContactMode: mode })
+/**
+ * Maps the 7 `ActivityType` values `logContact` records down to the 5
+ * legacy `LastContactMode` values `Contact.lastContactMode` still stores —
+ * `commitImport` (CSV import) and the manual contact-edit form both still
+ * read/write that legacy field directly and must keep working unchanged,
+ * so `ActivityType` was added as a richer, additional axis rather than a
+ * replacement. Typed as `Record<ActivityType, LastContactMode>` (not
+ * `Partial`) so TypeScript itself guarantees every `ActivityType` maps to
+ * something — adding an 8th activity type without extending this table is
+ * a compile error, not a silent `undefined` at runtime.
+ */
+export const ACTIVITY_TYPE_TO_LAST_CONTACT_MODE: Record<ActivityType, LastContactMode> = {
+  Email: 'Email',
+  'Inbound Call': 'Phone',
+  'Outbound Call - Talked To': 'Phone',
+  'Outbound Call - VM': 'Phone',
+  'Onsite Appointment': 'In-Person',
+  'Seat Visit': 'In-Person',
+  Other: 'Other',
+}
+
+/** Extra context `logContact` denormalizes onto the new `Activity` doc —
+ * everything the contact detail page already has in scope (`contact`,
+ * `user`) at the moment the rep clicks "Log Contact". */
+export interface LogContactContext {
+  contactName: string
+  organizationId: string | null
+  ownerId: string
+  createdBy: string
+  note?: string
+}
+
+/**
+ * The contact detail page's one dominant primary action: records that the
+ * rep just made contact, right now, by the given `type`. Writes two docs
+ * in a single `writeBatch` so they can never partially fail:
+ *   1. The legacy `Contact.lastContactDate`/`lastContactMode` update (via
+ *      `ACTIVITY_TYPE_TO_LAST_CONTACT_MODE`'s mapping) — unchanged shape,
+ *      so `commitImport` and the contact-edit form keep working.
+ *   2. A new `activities/{id}` doc — this is the *only* place an
+ *      `Activity` doc is ever created. A manual edit of
+ *      `lastContactMode`/`lastContactDate` via `updateContact` (the
+ *      contact-edit form) must NOT create one, or correcting a typo would
+ *      inflate a rep's activity counts on the dashboard.
+ */
+export async function logContact(
+  id: string,
+  type: ActivityType,
+  when: Date,
+  context: LogContactContext,
+): Promise<void> {
+  const batch = writeBatch(db)
+  const occurredAt = Timestamp.fromDate(when)
+
+  batch.update(doc(db, 'contacts', id), {
+    lastContactDate: occurredAt,
+    lastContactMode: ACTIVITY_TYPE_TO_LAST_CONTACT_MODE[type],
+    updatedAt: serverTimestamp(),
+  })
+
+  // Record<string, unknown>, not typed as `Activity`, for the same reason
+  // every other write payload in this file is: `serverTimestamp()`
+  // returns a `FieldValue` sentinel, not a real `FirestoreTimestamp`.
+  const activityPayload: Record<string, unknown> = {
+    contactId: id,
+    contactName: context.contactName,
+    organizationId: context.organizationId,
+    type,
+    ownerId: context.ownerId,
+    occurredAt,
+    createdAt: serverTimestamp(),
+    createdBy: context.createdBy,
+  }
+  if (context.note) activityPayload.note = context.note.trim()
+  batch.set(doc(collection(db, 'activities')), activityPayload)
+
+  await batch.commit()
 }
