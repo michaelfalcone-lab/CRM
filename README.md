@@ -85,14 +85,22 @@ values — the emulator doesn't validate them.
 ## Deployment
 
 **`npm run deploy` is the only supported way to ship this app — never run a bare
-`firebase deploy` (or `npx firebase deploy`) directly.** `npm run deploy` has a
-`predeploy` script (`npm run test:rules && npm run test:functions`) wired to it via npm's
-built-in `pre<script>` convention: npm runs `predeploy` automatically before `deploy`,
-and if it exits non-zero, `deploy` (the actual `firebase deploy`) never runs. This is
-enforced by npm itself, not by a reminder to run tests first — an ordinary `npm run
-deploy` cannot skip the gate. (The one exception is passing an explicit
-`--ignore-scripts` flag, which disables _all_ pre/post-script hooks — never do this for a
-deploy.)
+`firebase deploy` (or `npx firebase deploy`) directly.** The test gate is written directly
+into the `deploy` script's own body — `npm run test:rules && npm run test:functions &&
+npx firebase deploy` — rather than relying on npm's `pre<script>` hook convention. This
+is deliberate: a `predeploy` hook script is skipped by `npm run deploy --ignore-scripts`
+*and* by a persistent `ignore-scripts=true` in `.npmrc` (a common supply-chain hardening
+setting), which would silently let `firebase deploy` run with zero test coverage and exit
+0. Because the tests are part of `deploy`'s own script body rather than a separate hook,
+`--ignore-scripts` has no effect on them — npm always executes the body of an
+explicitly-invoked script; the flag only disables pre/post *hooks*. There is no way to run
+`npm run deploy` (with or without `--ignore-scripts`) and reach `firebase deploy` without
+both suites passing first.
+
+If you just want to run the gate on its own, without deploying, use `npm run verify`
+(`test:rules` + `test:functions`). It is intentionally *not* named `predeploy` — npm would
+then auto-run it as a hook before `deploy` too, on top of the tests already embedded in
+`deploy`'s body, running the suites twice on every deploy.
 
 ### One-time GCP/Firebase project setup
 

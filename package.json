@@ -15,8 +15,8 @@
     "format": "prettier --write .",
     "test:rules": "scripts/with-java.sh npx firebase emulators:exec --only firestore \"npx vitest run tests/rules/firestore.rules.test.ts\"",
     "test:functions": "scripts/with-java.sh npx firebase emulators:exec --only firestore,auth \"npx vitest run functions/src scripts\"",
-    "predeploy": "npm run test:rules && npm run test:functions",
-    "deploy": "npx firebase deploy"
+    "verify": "npm run test:rules && npm run test:functions",
+    "deploy": "npm run test:rules && npm run test:functions && npx firebase deploy"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",

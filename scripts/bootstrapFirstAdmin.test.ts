@@ -16,8 +16,9 @@
  * `beforeEach`, rather than assuming it starts empty.
  */
 import { beforeEach, describe, expect, it } from 'vitest'
-import { db } from '../functions/src/lib/firebaseAdmin.ts'
-import { bootstrapFirstAdmin, toEmailLower, WORKSPACE_DOMAIN } from './bootstrapFirstAdmin.ts'
+import { db } from '../functions/src/lib/firebaseAdmin'
+import { WORKSPACE_DOMAIN as FUNCTIONS_WORKSPACE_DOMAIN } from '../functions/src/lib/config'
+import { bootstrapFirstAdmin, toEmailLower, WORKSPACE_DOMAIN } from './bootstrapFirstAdmin'
 
 async function clearUsers() {
   const snap = await db.collection('users').get()
@@ -27,6 +28,16 @@ async function clearUsers() {
 describe('bootstrapFirstAdmin', () => {
   beforeEach(async () => {
     await clearUsers()
+  })
+
+  // This script deliberately duplicates WORKSPACE_DOMAIN rather than importing it from
+  // functions/src/lib/config.ts (see the doc comment atop bootstrapFirstAdmin.ts for why:
+  // no dependency on the functions workspace's build/firebase-functions). That duplication
+  // is only safe if the two constants never drift apart, so cross-check them here — an edit
+  // to one without the other now fails this test loudly instead of silently letting the
+  // bootstrap script and the deployed callables disagree on which domain may become admin.
+  it('keeps WORKSPACE_DOMAIN in sync with functions/src/lib/config.ts', () => {
+    expect(WORKSPACE_DOMAIN).toBe(FUNCTIONS_WORKSPACE_DOMAIN)
   })
 
   it('rejects an empty email', async () => {
