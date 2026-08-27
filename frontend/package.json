@@ -17,6 +17,7 @@
     "react-dom": "^19.2.8",
     "react-hook-form": "^7.86.0",
     "react-router-dom": "^7.18.2",
+    "recharts": "^3.10.1",
     "shared": "*",
     "zod": "^4.4.3"
   },
