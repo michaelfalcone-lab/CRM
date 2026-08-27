@@ -49,3 +49,22 @@
   color: var(--brand-red);
   margin-bottom: var(--space-4);
 }
+
+/* Replaces the widget grid entirely when 'custom' is selected but no
+   valid range has been entered yet — deliberately more prominent than
+   `.status`'s inline hint so it reads as "nothing is shown" rather than
+   letting the four widgets silently render unscoped all-time data under
+   a "Custom" label. */
+.emptyState {
+  border: 1px dashed var(--gray-300);
+  border-radius: var(--radius-md);
+  padding: var(--space-6) var(--space-5);
+  text-align: center;
+  color: var(--gray-600);
+}
+
+.emptyStateTitle {
+  font-weight: 600;
+  color: var(--gray-800);
+  margin-bottom: var(--space-2);
+}

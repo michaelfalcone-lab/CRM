@@ -73,6 +73,15 @@ export function DashboardPage() {
 
   const loading = ownersLoading || stagesLoading || data.loading
 
+  // A 'custom' preset with no complete/valid range MUST NOT fall through
+  // to rendering the widgets against `useDashboardData(null)` — that scope
+  // means "overall" (all-time, unscoped) to the fetching hook, which would
+  // otherwise render four widgets full of plausible-looking, completely
+  // unscoped numbers under a "Custom" label the manager picked
+  // specifically to narrow the window. See the Task 8b fix-round-1 report
+  // for the manual verification of this exact failure mode.
+  const customNeedsRange = preset === 'custom' && !range
+
   return (
     <div className={styles.page}>
       <h2>Sales Output Dashboard</h2>
@@ -87,25 +96,31 @@ export function DashboardPage() {
       />
 
       {data.error && <p className={styles.error}>{data.error}</p>}
-      {loading && reps.length === 0 && <p className={styles.status}>Loading…</p>}
-      {preset === 'custom' && !range && (
-        <p className={styles.status}>Pick a start and end date to see this period's data.</p>
+      {!customNeedsRange && loading && reps.length === 0 && (
+        <p className={styles.status}>Loading…</p>
       )}
 
-      <div className={styles.grid}>
-        <div className={styles.output}>
-          <TotalOutputChart rows={totalOutput.rows} teamTotal={totalOutput.teamTotal} />
+      {customNeedsRange ? (
+        <div className={styles.emptyState} role="status">
+          <p className={styles.emptyStateTitle}>Choose a date range</p>
+          <p>Pick a start and end date above to see this period's data.</p>
         </div>
-        <div className={styles.gauge}>
-          <WinRateGauge result={winRate} />
+      ) : (
+        <div className={styles.grid}>
+          <div className={styles.output}>
+            <TotalOutputChart rows={totalOutput.rows} teamTotal={totalOutput.teamTotal} />
+          </div>
+          <div className={styles.gauge}>
+            <WinRateGauge result={winRate} />
+          </div>
+          <div className={styles.pipeline}>
+            <PipelineChart rows={pipeline.rows} stages={pipeline.stages} />
+          </div>
+          <div className={styles.results}>
+            <ConversionResultsTable result={conversionResults} />
+          </div>
         </div>
-        <div className={styles.pipeline}>
-          <PipelineChart rows={pipeline.rows} stages={pipeline.stages} />
-        </div>
-        <div className={styles.results}>
-          <ConversionResultsTable result={conversionResults} />
-        </div>
-      </div>
+      )}
     </div>
   )
 }
