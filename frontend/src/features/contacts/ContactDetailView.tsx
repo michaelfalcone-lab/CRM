@@ -7,7 +7,9 @@ import {
   canEditRecord,
   logContact,
   ownerLabel,
+  parseLocalDateInput,
   toBadgeColor,
+  todayLocalDateInput,
   useContact,
   useOpportunitiesForContact,
   useOwnerDirectory,
@@ -38,9 +40,10 @@ export function ContactDetailView() {
   const { opportunities } = useOpportunitiesForContact(id)
 
   const [logging, setLogging] = useState(false)
-  const [logDate, setLogDate] = useState(() => new Date().toISOString().slice(0, 10))
+  const [logDate, setLogDate] = useState(() => todayLocalDateInput())
   const [logMode, setLogMode] = useState<ActivityType>('Outbound Call - Talked To')
   const [logSubmitting, setLogSubmitting] = useState(false)
+  const [logError, setLogError] = useState<string | null>(null)
 
   if (loading) return <Card>Loading…</Card>
   if (!contact) return <Card>Contact not found.</Card>
@@ -52,14 +55,20 @@ export function ContactDetailView() {
     if (logSubmitting) return
     if (!user?.authUid) return
     setLogSubmitting(true)
+    setLogError(null)
     try {
-      await logContact(contact!.id, logMode, new Date(logDate), {
+      // `logDate` is a `YYYY-MM-DD` date-input value — parsed as local
+      // midnight, not `new Date(logDate)`'s UTC midnight. See
+      // `frontend/src/lib/dates.ts` for why that distinction matters.
+      await logContact(contact!.id, logMode, parseLocalDateInput(logDate), {
         contactName: `${contact!.firstName} ${contact!.lastName}`,
         organizationId: contact!.organizationId,
         ownerId: contact!.ownerId,
         createdBy: user.authUid,
       })
       setLogging(false)
+    } catch (err) {
+      setLogError(err instanceof Error ? err.message : 'Something went wrong. Please try again.')
     } finally {
       setLogSubmitting(false)
     }
@@ -106,36 +115,39 @@ export function ContactDetailView() {
           )}
         </div>
 
-        <div className={styles.primaryAction}>
-          {!logging ? (
-            <Button variant="primary" onClick={() => setLogging(true)}>
-              Log Contact
-            </Button>
-          ) : (
-            <div className={styles.logForm}>
-              <input
-                type="date"
-                value={logDate}
-                onChange={(e) => setLogDate(e.target.value)}
-                aria-label="Contact date"
-              />
-              <Select
-                id="log-contact-mode"
-                name="logContactMode"
-                label="Mode"
-                options={ACTIVITY_TYPES.map((m) => ({ value: m, label: m }))}
-                value={logMode}
-                onChange={(e) => setLogMode(e.target.value as ActivityType)}
-              />
-              <Button variant="primary" onClick={() => void handleLogContact()} disabled={logSubmitting}>
-                Save
+        {canEdit && (
+          <div className={styles.primaryAction}>
+            {!logging ? (
+              <Button variant="primary" onClick={() => setLogging(true)}>
+                Log Contact
               </Button>
-              <Button variant="ghost" onClick={() => setLogging(false)} disabled={logSubmitting}>
-                Cancel
-              </Button>
-            </div>
-          )}
-        </div>
+            ) : (
+              <div className={styles.logForm}>
+                <input
+                  type="date"
+                  value={logDate}
+                  onChange={(e) => setLogDate(e.target.value)}
+                  aria-label="Contact date"
+                />
+                <Select
+                  id="log-contact-mode"
+                  name="logContactMode"
+                  label="Mode"
+                  options={ACTIVITY_TYPES.map((m) => ({ value: m, label: m }))}
+                  value={logMode}
+                  onChange={(e) => setLogMode(e.target.value as ActivityType)}
+                />
+                <Button variant="primary" onClick={() => void handleLogContact()} disabled={logSubmitting}>
+                  Save
+                </Button>
+                <Button variant="ghost" onClick={() => setLogging(false)} disabled={logSubmitting}>
+                  Cancel
+                </Button>
+                {logError && <p className={styles.formError}>{logError}</p>}
+              </div>
+            )}
+          </div>
+        )}
       </Card>
 
       <Card>

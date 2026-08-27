@@ -21,8 +21,9 @@ service cloud.firestore {
       return isActiveUser() && resource.data.ownerId == callerUid();
     }
     // Invariant for write paths that create documents in `contacts`,
-    // `organizations`, or `opportunities` (e.g. Task 4's commitImport and
-    // Task 6's contact-create UI): `ownerId` MUST be set at document
+    // `organizations`, `opportunities`, or `activities` (e.g. Task 4's
+    // commitImport, Task 6's contact-create UI, and Task 8's logContact):
+    // `ownerId` MUST be set at document
     // creation. This function fails closed (denies) when the field is
     // missing entirely, not just when it's null — a document created
     // without `ownerId` permanently blocks its owning rep (non-admin) from

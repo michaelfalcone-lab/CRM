@@ -2,6 +2,7 @@ export type { WithId } from './firestoreTypes'
 export { canEditRecord } from './permissions'
 export { toBadgeColor } from './badgeColor'
 export { ownerLabel } from './ownerLabel'
+export { parseLocalDateInput, toLocalDateInput, todayLocalDateInput } from './dates'
 
 export {
   useContacts,

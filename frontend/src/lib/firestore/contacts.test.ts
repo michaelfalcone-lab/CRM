@@ -151,6 +151,19 @@ describe('updateContact', () => {
     const payload = updateDocMock.mock.calls[0]![1] as Record<string, unknown>
     expect(payload.ownerId).toBe('new-owner')
   })
+
+  it('never creates an Activity, even when correcting lastContactMode/lastContactDate directly', async () => {
+    // This is the property "only the dedicated Log Contact action creates
+    // an Activity" depends on: it holds today only because this function
+    // happens not to touch `activities`. Pinning it here means a future
+    // refactor that unifies this path with `logContact`'s writeBatch can't
+    // silently start inflating a rep's activity count on a typo fix.
+    await updateContact('contact-1', {
+      lastContactMode: 'Phone',
+      lastContactDate: new Date('2026-01-01T00:00:00Z'),
+    })
+    expect(writeBatchMock).not.toHaveBeenCalled()
+  })
 })
 
 describe('ACTIVITY_TYPE_TO_LAST_CONTACT_MODE', () => {

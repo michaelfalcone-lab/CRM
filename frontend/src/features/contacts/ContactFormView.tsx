@@ -6,7 +6,15 @@ import { useNavigate, useParams } from 'react-router-dom'
 import type { LastContactMode } from 'shared'
 import { Button, Card, Select, TextField } from '../../components/ui'
 import { useCurrentUser } from '../../app/AuthProvider'
-import { createContact, updateContact, useContact, useOwnerDirectory, useStatuses } from '../../lib'
+import {
+  createContact,
+  parseLocalDateInput,
+  toLocalDateInput,
+  updateContact,
+  useContact,
+  useOwnerDirectory,
+  useStatuses,
+} from '../../lib'
 import { OrganizationCombobox, type OrganizationComboboxValue } from './OrganizationCombobox'
 import styles from './ContactFormView.module.css'
 
@@ -77,7 +85,7 @@ export function ContactFormView() {
       phone: contact.phone ?? '',
       status: contact.status ?? '',
       lastContactDate: contact.lastContactDate
-        ? new Date(contact.lastContactDate.seconds * 1000).toISOString().slice(0, 10)
+        ? toLocalDateInput(new Date(contact.lastContactDate.seconds * 1000))
         : '',
       lastContactMode: contact.lastContactMode ?? '',
       ownerId: contact.ownerId,
@@ -118,7 +126,7 @@ export function ContactFormView() {
           organizationId: org?.id ?? null,
           organizationName: org?.name ?? null,
           status: values.status || null,
-          lastContactDate: values.lastContactDate ? new Date(values.lastContactDate) : null,
+          lastContactDate: values.lastContactDate ? parseLocalDateInput(values.lastContactDate) : null,
           lastContactMode: (values.lastContactMode as LastContactMode) || null,
           ...(isAdmin && values.ownerId ? { ownerId: values.ownerId } : {}),
         })
@@ -133,7 +141,7 @@ export function ContactFormView() {
           organizationId: org?.id ?? null,
           organizationName: org?.name ?? undefined,
           status: values.status || undefined,
-          lastContactDate: values.lastContactDate ? new Date(values.lastContactDate) : undefined,
+          lastContactDate: values.lastContactDate ? parseLocalDateInput(values.lastContactDate) : undefined,
           lastContactMode: (values.lastContactMode as LastContactMode) || undefined,
           ownerId,
           createdBy: user.authUid!,

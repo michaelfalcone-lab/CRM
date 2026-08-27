@@ -62,3 +62,11 @@
   border: 1px solid var(--gray-300);
   border-radius: var(--radius-sm);
 }
+
+.formError {
+  flex-basis: 100%;
+  margin: 0;
+  font-family: var(--font-caption);
+  font-size: var(--font-size-caption);
+  color: var(--color-danger-text);
+}

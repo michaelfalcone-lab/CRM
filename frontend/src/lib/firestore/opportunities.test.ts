@@ -18,6 +18,10 @@ import type { WithId } from '../firestoreTypes'
 
 let currentOpportunity: Opportunity
 
+const addDocMock = vi.fn(async (...args: unknown[]) => {
+  void args
+  return { id: 'new-opp-1' }
+})
 const docMock = vi.fn((...args: unknown[]) => ({ __doc: args.slice(1) }))
 const txGetMock = vi.fn(
   async (): Promise<{ exists: () => boolean; data: () => Opportunity | undefined }> => ({
@@ -32,7 +36,7 @@ const runTransactionMock = vi.fn(async (_db: unknown, updater: (tx: unknown) => 
 })
 
 vi.mock('firebase/firestore', () => ({
-  addDoc: vi.fn(),
+  addDoc: (...args: unknown[]) => addDocMock(...args),
   collection: vi.fn(),
   deleteField: vi.fn(() => ({ __deleteField: true })),
   doc: (...args: unknown[]) => docMock(...args),
@@ -46,7 +50,7 @@ vi.mock('firebase/firestore', () => ({
 
 vi.mock('../firebase', () => ({ db: {} }))
 
-import { updateOpportunity } from './opportunities'
+import { createOpportunity, updateOpportunity } from './opportunities'
 
 function stage(
   id: string,
@@ -219,5 +223,74 @@ describe('updateOpportunity — wonAt/lostAt transitions', () => {
   it('throws if the opportunity does not exist', async () => {
     txGetMock.mockResolvedValueOnce({ exists: () => false, data: () => undefined })
     await expect(updateOpportunity('missing-opp', { stage: 'won' }, STAGES)).rejects.toThrow()
+  })
+
+  it('clears a stale wonAt when moved OUT of a retired (no-longer-in-the-list) Won stage', async () => {
+    // The harmful direction of the retired-stage gap: the opportunity's
+    // *current* stage ('retired-won-stage') isn't in the caller-supplied
+    // STAGES list at all (e.g. an admin retired it after it was used), but
+    // the doc still carries a real wonAt from when it was won. Moving it to
+    // any open stage must still clear wonAt — keying off the document's own
+    // field, not the unresolvable outgoing stage's flags, is what makes
+    // this possible. See `updateOpportunity`'s doc comment.
+    const originalWonAt = { seconds: 1000, nanoseconds: 0 }
+    currentOpportunity = baseOpportunity({ stage: 'retired-won-stage', wonAt: originalWonAt })
+
+    await updateOpportunity('opp-1', { stage: 'created' }, STAGES)
+
+    const patch = txUpdateMock.mock.calls[0]![1] as Record<string, unknown>
+    expect(patch.wonAt).toEqual({ __deleteField: true })
+  })
+
+  it('clears a stale lostAt when moved OUT of a retired (no-longer-in-the-list) Lost stage', async () => {
+    const originalLostAt = { seconds: 2000, nanoseconds: 0 }
+    currentOpportunity = baseOpportunity({
+      stage: 'retired-lost-stage',
+      lostAt: originalLostAt,
+      lostReason: 'Cost',
+    })
+
+    await updateOpportunity('opp-1', { stage: 'in-conversation' }, STAGES)
+
+    const patch = txUpdateMock.mock.calls[0]![1] as Record<string, unknown>
+    expect(patch.lostAt).toEqual({ __deleteField: true })
+    expect(patch.lostReason).toEqual({ __deleteField: true })
+  })
+})
+
+describe('createOpportunity — wonAt/lostAt stamping at creation', () => {
+  function createInput(stage: string): Parameters<typeof createOpportunity>[0] {
+    return {
+      contactId: 'contact-1',
+      organizationId: null,
+      sport: 'Football',
+      stage,
+      ownerId: 'rep-1',
+      createdBy: 'rep-1',
+    }
+  }
+
+  it('stamps wonAt (and not lostAt) when created directly into a Won stage', async () => {
+    await createOpportunity(createInput('won'), STAGES)
+
+    const payload = addDocMock.mock.calls[0]![1] as Record<string, unknown>
+    expect(payload.wonAt).toBeDefined()
+    expect(payload.lostAt).toBeUndefined()
+  })
+
+  it('stamps lostAt (and not wonAt) when created directly into a Lost stage', async () => {
+    await createOpportunity(createInput('lost'), STAGES)
+
+    const payload = addDocMock.mock.calls[0]![1] as Record<string, unknown>
+    expect(payload.lostAt).toBeDefined()
+    expect(payload.wonAt).toBeUndefined()
+  })
+
+  it('stamps neither wonAt nor lostAt when created into an open stage', async () => {
+    await createOpportunity(createInput('created'), STAGES)
+
+    const payload = addDocMock.mock.calls[0]![1] as Record<string, unknown>
+    expect(payload.wonAt).toBeUndefined()
+    expect(payload.lostAt).toBeUndefined()
   })
 })

@@ -160,14 +160,28 @@ export interface UpdateOpportunityInput {
  *
  * `stages` is the caller's already-loaded `opportunityStages` list (every
  * call site already holds this via `useOpportunityStages()`), used only to
- * look up the `isWon`/`isLost` flags for the outgoing/incoming stage ids.
- * It is deliberately never trusted for the opportunity's *current* stage
- * (or its current `wonAt`/`lostAt`) — those are re-read from the server
- * inside a `runTransaction`, so two concurrent edits of the same
- * opportunity (e.g. two tabs, or a rep and an admin both moving it at
- * once) can't race each other into computing the transition from a stale
- * cached `stage`: Firestore automatically retries the transaction if the
- * document changes between the read and the commit.
+ * look up the `isWon`/`isLost` flags for stage ids. It is deliberately
+ * never trusted for the opportunity's *current* stage (or its current
+ * `wonAt`/`lostAt`) — those are re-read from the server inside a
+ * `runTransaction`, so two concurrent edits of the same opportunity (e.g.
+ * two tabs, or a rep and an admin both moving it at once) can't race each
+ * other into computing the transition from a stale cached `stage`:
+ * Firestore automatically retries the transaction if the document changes
+ * between the read and the commit.
+ *
+ * Deliberately, the transition test below depends only on the *incoming*
+ * stage's flags plus the document's own `wonAt`/`lostAt` field — never on
+ * the *outgoing* stage's flags. The outgoing stage id can be unresolvable
+ * (a since-retired stage that's fallen out of the active-only `stages`
+ * list `stageFlags()` is given), in which case its flags silently read as
+ * `false`/`false`. Keying the "clear on exit" branch off the outgoing
+ * stage's (possibly-wrong) flags would leave `wonAt` stamped forever on an
+ * opportunity that moved out of a retired Won stage — exactly the kind of
+ * stale field the dashboard's `where('wonAt', ...)` query would then count
+ * as a win indefinitely. Keying off the document's own field instead is
+ * always resolvable (you can only move *into* a stage the form currently
+ * offers, so `incoming` is always a real, active stage) and self-healing:
+ * any move out of a won/lost stage — retired or not — clears the field.
  */
 export async function updateOpportunity(
   id: string,
@@ -195,18 +209,21 @@ export async function updateOpportunity(
       data.stage = patch.stage
 
       if (patch.stage !== current.stage) {
-        const outgoing = stageFlags(stages, current.stage)
         const incoming = stageFlags(stages, patch.stage)
 
-        if (incoming.isWon && !outgoing.isWon) {
+        // Keyed off `incoming` (always resolvable) plus the document's own
+        // field — never off the outgoing stage's flags, which can be
+        // unresolvable for a since-retired stage. See this function's doc
+        // comment for why.
+        if (incoming.isWon) {
           if (!current.wonAt) data.wonAt = serverTimestamp()
-        } else if (!incoming.isWon && outgoing.isWon) {
+        } else if (current.wonAt) {
           data.wonAt = deleteField()
         }
 
-        if (incoming.isLost && !outgoing.isLost) {
+        if (incoming.isLost) {
           if (!current.lostAt) data.lostAt = serverTimestamp()
-        } else if (!incoming.isLost && outgoing.isLost) {
+        } else if (current.lostAt) {
           data.lostAt = deleteField()
           // A stale lost reason shouldn't survive reopening the deal,
           // unless this same patch is explicitly setting a new one.

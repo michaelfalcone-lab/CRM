@@ -1,17 +1,22 @@
 /**
- * Component test for the contact detail page's ownership-gated edit
- * affordance: the UI must never offer an "Edit" button on a contact a rep
- * doesn't own — the rules would reject the write anyway, but per the
- * brief the UI should just avoid presenting a broken affordance in the
- * first place. `OpportunityList`/`ContactNotesPanel` (children with their
- * own Firestore subscriptions) are stubbed out — this test is only about
- * the header's Edit gating, not their internals.
+ * Component test for the contact detail page's ownership-gated affordances:
+ * the UI must never offer an "Edit" or "Log Contact" button on a contact a
+ * rep doesn't own — the rules would reject the write anyway (Log Contact's
+ * write batch touches `contacts.ownerId`-scoped rules via `ownsRecord()`),
+ * but per the brief the UI should just avoid presenting a broken affordance
+ * in the first place, rather than only reporting the denial after the fact.
+ * `OpportunityList`/`ContactNotesPanel` (children with their own Firestore
+ * subscriptions) are stubbed out — this test is only about the header/
+ * primary-action gating, not their internals.
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { render, screen, waitFor } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import type { Contact, User } from 'shared'
 import { canEditRecord } from '../../lib/permissions'
+import { parseLocalDateInput, todayLocalDateInput } from '../../lib/dates'
+import * as lib from '../../lib'
 import { ContactDetailView } from './ContactDetailView'
 
 const mockContact: Contact & { id: string } = {
@@ -70,6 +75,10 @@ vi.mock('../../lib', () => ({
   ownerLabel: () => 'Someone',
   toBadgeColor: () => 'neutral',
   logContact: vi.fn(),
+  // Real implementations — the local-date convention itself isn't what
+  // this file's tests exercise.
+  parseLocalDateInput,
+  todayLocalDateInput,
 }))
 
 vi.mock('../opportunities', () => ({
@@ -94,7 +103,7 @@ beforeEach(() => {
   currentUser = null
 })
 
-describe('ContactDetailView ownership-gated edit affordance', () => {
+describe('ContactDetailView ownership-gated Edit/Log Contact affordances', () => {
   it('does not offer Edit to a rep who does not own the contact', () => {
     currentUser = makeUser({ authUid: 'other-rep-uid', role: 'rep' })
     renderDetail()
@@ -113,9 +122,44 @@ describe('ContactDetailView ownership-gated edit affordance', () => {
     expect(screen.getByRole('button', { name: 'Edit' })).toBeInTheDocument()
   })
 
-  it('always shows the one dominant primary action, Log Contact, regardless of ownership', () => {
+  it('does not offer Log Contact to a rep who does not own the contact', () => {
+    // The write would be denied by firestore.rules anyway (Log Contact's
+    // batch includes a `contacts` update gated by `ownsRecord()`) — the UI
+    // must not offer a broken affordance, and a rep opening this page
+    // previously got the form with no indication the save would fail.
     currentUser = makeUser({ authUid: 'other-rep-uid', role: 'rep' })
     renderDetail()
+    expect(screen.queryByRole('button', { name: 'Log Contact' })).not.toBeInTheDocument()
+  })
+
+  it('offers Log Contact to the owning rep', () => {
+    currentUser = makeUser({ authUid: 'owner-uid', role: 'rep' })
+    renderDetail()
     expect(screen.getByRole('button', { name: 'Log Contact' })).toBeInTheDocument()
+  })
+
+  it('offers Log Contact to an admin regardless of ownership', () => {
+    currentUser = makeUser({ authUid: 'admin-uid', role: 'admin' })
+    renderDetail()
+    expect(screen.getByRole('button', { name: 'Log Contact' })).toBeInTheDocument()
+  })
+})
+
+describe('ContactDetailView Log Contact error handling', () => {
+  it('surfaces a rejected logContact call to the user instead of failing silently', async () => {
+    currentUser = makeUser({ authUid: 'owner-uid', role: 'rep' })
+    vi.mocked(lib.logContact).mockRejectedValueOnce(new Error('Missing or insufficient permissions.'))
+    const user = userEvent.setup()
+    renderDetail()
+
+    await user.click(screen.getByRole('button', { name: 'Log Contact' }))
+    await user.click(screen.getByRole('button', { name: 'Save' }))
+
+    await waitFor(() => {
+      expect(screen.getByText('Missing or insufficient permissions.')).toBeInTheDocument()
+    })
+    // The form must stay open so the rep can see the error and retry —
+    // not silently close as if the save had succeeded.
+    expect(screen.getByRole('button', { name: 'Save' })).toBeInTheDocument()
   })
 })

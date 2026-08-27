@@ -247,6 +247,14 @@ export interface Activity {
    * logging (mirrors `Contact.organizationId`'s nullability). */
   organizationId: string | null
   type: ActivityType
+  /** The contact's *owning rep* — who this activity is credited to, not
+   * necessarily who performed the action. Distinct from `createdBy` (the
+   * acting user): the two coincide when a rep logs their own contact, but
+   * diverge when an admin logs a contact on a rep's behalf — in that case
+   * the activity is credited to the rep (`ownerId`), not the admin who
+   * clicked the button (`createdBy`). This is the field the sales-output
+   * dashboard's per-rep grouping/counting uses; `createdBy` is never used
+   * for that purpose. */
   ownerId: string
   note?: string
   /** When the interaction actually happened (the Log Contact form's date
