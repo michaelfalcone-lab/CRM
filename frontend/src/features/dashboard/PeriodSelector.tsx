@@ -1,5 +1,11 @@
 import { TextField } from '../../components/ui'
-import { PERIOD_PRESETS, validateCustomRange, type PeriodPreset } from './period'
+import {
+  formatPeriodRangeLabel,
+  PERIOD_PRESETS,
+  validateCustomRange,
+  type PeriodPreset,
+  type PeriodRange,
+} from './period'
 import styles from './PeriodSelector.module.css'
 
 export interface PeriodSelectorProps {
@@ -9,6 +15,12 @@ export interface PeriodSelectorProps {
   customEnd: string
   onCustomStartChange: (value: string) => void
   onCustomEndChange: (value: string) => void
+  /** The resolved range the dashboard is actually querying (`null` for
+   * `'overall'`, or for an incomplete/invalid `'custom'` selection) — used
+   * only to display which concrete dates are in scope; see
+   * `formatPeriodRangeLabel`'s doc comment for why that belongs on
+   * screen. */
+  range: PeriodRange | null
 }
 
 /** Preset buttons (Overall/Today/Week/Month/Season/Custom) plus, only
@@ -22,29 +34,42 @@ export function PeriodSelector({
   customEnd,
   onCustomStartChange,
   onCustomEndChange,
+  range,
 }: PeriodSelectorProps) {
   const customError =
     preset === 'custom' ? validateCustomRange(customStart, customEnd) ?? undefined : undefined
 
+  // For 'custom' with no valid range yet, the date pickers themselves (and
+  // the page's own empty state) already communicate "nothing chosen yet"
+  // — showing "All time" here would misleadingly suggest that's what's
+  // being summed, when the page in fact renders no data at all for that
+  // case (see the Task 8b fix-round-1 report).
+  const showRangeLabel = preset !== 'custom' || range !== null
+
   return (
     <div className={styles.wrap}>
-      <div className={styles.presets} role="group" aria-label="Dashboard time period">
-        {PERIOD_PRESETS.map((option) => (
-          <button
-            key={option.value}
-            type="button"
-            className={[
-              styles.presetButton,
-              option.value === preset ? styles.presetButtonActive : '',
-            ]
-              .filter(Boolean)
-              .join(' ')}
-            aria-pressed={option.value === preset}
-            onClick={() => onPresetChange(option.value)}
-          >
-            {option.label}
-          </button>
-        ))}
+      <div className={styles.presetRow}>
+        <div className={styles.presets} role="group" aria-label="Dashboard time period">
+          {PERIOD_PRESETS.map((option) => (
+            <button
+              key={option.value}
+              type="button"
+              className={[
+                styles.presetButton,
+                option.value === preset ? styles.presetButtonActive : '',
+              ]
+                .filter(Boolean)
+                .join(' ')}
+              aria-pressed={option.value === preset}
+              onClick={() => onPresetChange(option.value)}
+            >
+              {option.label}
+            </button>
+          ))}
+        </div>
+        {showRangeLabel && (
+          <p className={styles.rangeLabel}>{formatPeriodRangeLabel(range)}</p>
+        )}
       </div>
 
       {preset === 'custom' && (

@@ -11,6 +11,7 @@ import {
 } from 'recharts'
 import type { RepOutputRow } from './aggregations'
 import { DashboardPanel } from './DashboardPanel'
+import { floorForLabelAnchor, labelAnchorKey } from './labelAnchor'
 import {
   BRAND_WHITE,
   OUTPUT_BUCKETS,
@@ -61,7 +62,11 @@ function CategoryTick({
   )
 }
 
-const LAST_BUCKET = OUTPUT_BUCKETS[OUTPUT_BUCKETS.length - 1]!.key
+/** The single anchor key both the zero-floor and the `<LabelList>`
+ * placement below key off — see `labelAnchor.ts`'s doc comment for why
+ * this MUST be the one place that decision is made, not recomputed
+ * separately in the data-prep step and the `<Bar>` JSX. */
+const LABEL_ANCHOR_KEY = labelAnchorKey(OUTPUT_BUCKETS.map((bucket) => bucket.key))
 
 /** Total Output — one horizontal stacked bar per rep plus a Team Total
  * row, bucketed Initial Outreach / Calls / Emails / Meetings /
@@ -83,22 +88,23 @@ const LAST_BUCKET = OUTPUT_BUCKETS[OUTPUT_BUCKETS.length - 1]!.key
  * segment needs a non-brown background to be visible at all.
  *
  * The "labeled with its total at the end" requirement is carried by
- * `<LabelList>` on the LAST bucket's `<Bar>` (Follow-ups), reading
- * `total` instead of that bucket's own value — but found during manual
- * verification that Recharts skips rendering a `LabelList` entry entirely
- * when the bar segment it's attached to has value exactly 0 (no geometry
- * to anchor to), which silently dropped a rep's total label whenever
- * their Follow-ups count happened to be zero — an extremely common case,
- * not a rare edge case, and exactly the "zero-activity rep" case the
- * brief calls out. Fixed by flooring ONLY that last bucket's fed-in value
- * at `ZERO_FLOOR` (never literally 0, so a rectangle always exists to
- * anchor the label to) while the `Tooltip` rounds the displayed number
- * back to a clean integer. */
+ * `<LabelList>` on the anchor bucket's `<Bar>` (currently Follow-ups,
+ * per `LABEL_ANCHOR_KEY`), reading `total` instead of that bucket's own
+ * value — but found during manual verification that Recharts skips
+ * rendering a `LabelList` entry entirely when the bar segment it's
+ * attached to has value exactly 0 (no geometry to anchor to), which
+ * silently dropped a rep's total label whenever their Follow-ups count
+ * happened to be zero — an extremely common case, not a rare edge case,
+ * and exactly the "zero-activity rep" case the brief calls out. Fixed by
+ * flooring ONLY the anchor bucket's fed-in value at `ZERO_FLOOR` (never
+ * literally 0, so a rectangle always exists to anchor the label to)
+ * while the `Tooltip` rounds the displayed number back to a clean
+ * integer. Both the floor below and the `<LabelList>` placement in the
+ * `<Bar>` map read the SAME `LABEL_ANCHOR_KEY` — see `labelAnchor.ts`. */
 export function TotalOutputChart({ rows, teamTotal }: TotalOutputChartProps) {
-  const data = [...rows, teamTotal].map((row) => ({
-    ...row,
-    [LAST_BUCKET]: Math.max(row[LAST_BUCKET as keyof RepOutputRow] as number, ZERO_FLOOR),
-  }))
+  const data = [...rows, teamTotal].map((row) =>
+    floorForLabelAnchor(row, LABEL_ANCHOR_KEY, ZERO_FLOOR),
+  )
   const height = Math.max(220, data.length * 56 + 60)
 
   return (
@@ -137,7 +143,7 @@ export function TotalOutputChart({ rows, teamTotal }: TotalOutputChartProps) {
               formatter={(value) => OUTPUT_BUCKETS.find((b) => b.key === value)?.label ?? value}
               wrapperStyle={{ color: VIZ_AXIS_TEXT, fontSize: 12 }}
             />
-            {OUTPUT_BUCKETS.map((bucket, index) => (
+            {OUTPUT_BUCKETS.map((bucket) => (
               <Bar
                 key={bucket.key}
                 dataKey={bucket.key}
@@ -145,7 +151,7 @@ export function TotalOutputChart({ rows, teamTotal }: TotalOutputChartProps) {
                 fill={bucket.color}
                 isAnimationActive={false}
               >
-                {index === OUTPUT_BUCKETS.length - 1 && (
+                {bucket.key === LABEL_ANCHOR_KEY && (
                   <LabelList
                     dataKey="total"
                     position="right"

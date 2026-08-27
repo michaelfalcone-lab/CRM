@@ -11,6 +11,7 @@ import {
 } from 'recharts'
 import type { RepPipelineRow, StageLike } from './aggregations'
 import { DashboardPanel } from './DashboardPanel'
+import { floorForLabelAnchor, labelAnchorKey } from './labelAnchor'
 import {
   BRAND_WHITE,
   VIZ_AXIS_TEXT,
@@ -72,21 +73,31 @@ function CategoryTick({ x, y, payload }: { x?: number; y?: number; payload?: { v
  * Won segment is brand brown, same as this dashboard's panel background,
  * and is invisible without it (see that constant's doc comment).
  *
- * The per-bar total label is carried by `<LabelList>` on the LAST stage's
- * `<Bar>`, with that one stage's fed-in value floored at `ZERO_FLOOR`
- * (never literally 0) so a rectangle always exists to anchor the label
- * to — see `TotalOutputChart`'s doc comment for the full reasoning
- * (Recharts silently drops a `LabelList` entirely when its bar segment's
- * value is exactly 0, which otherwise loses a rep's total whenever
- * their count in the LAST stage specifically happens to be zero). */
+ * The per-bar total label is carried by `<LabelList>` on the anchor
+ * stage's `<Bar>` (`ANCHOR_STAGE_ID` below — currently whichever stage
+ * sorts last by `order`), with that one stage's fed-in value floored at
+ * `ZERO_FLOOR` (never literally 0) so a rectangle always exists to anchor
+ * the label to — see `TotalOutputChart`'s doc comment for the full
+ * reasoning (Recharts silently drops a `LabelList` entirely when its bar
+ * segment's value is exactly 0, which otherwise loses a rep's total
+ * whenever their count in the anchor stage specifically happens to be
+ * zero). Both the floor below and the `<LabelList>` placement in the
+ * `<Bar>` map read the SAME `ANCHOR_STAGE_ID`, computed once via
+ * `labelAnchor.ts` — see that module's doc comment for why the two
+ * decisions must never be made independently (an admin can add stages
+ * beyond the 5 seeded ones, so this can't assume a fixed stage count). */
 export function PipelineChart({ rows, stages }: PipelineChartProps) {
   const stageColors = colorForStages(stages)
-  const lastStageId = stages[stages.length - 1]?.id
+  const ANCHOR_STAGE_ID = labelAnchorKey(stages.map((stage) => stage.id))
   const data = rows.map((row) => ({
     displayName: row.displayName,
     total: row.total,
-    ...row.byStage,
-    ...(lastStageId ? { [lastStageId]: Math.max(row.byStage[lastStageId] ?? 0, ZERO_FLOOR) } : {}),
+    // Floor only `byStage` (a real `Record<string, number>`, unlike the
+    // merged object below, which loses its index signature the moment
+    // `displayName`/`total` are spread in alongside it) so
+    // `floorForLabelAnchor`'s generic `keyof` constraint actually accepts
+    // an arbitrary stage id.
+    ...floorForLabelAnchor(row.byStage, ANCHOR_STAGE_ID, ZERO_FLOOR),
   }))
   const height = Math.max(200, data.length * 56 + 60)
 
@@ -129,7 +140,7 @@ export function PipelineChart({ rows, stages }: PipelineChartProps) {
               formatter={(value) => stages.find((s) => s.id === value)?.label ?? value}
               wrapperStyle={{ color: VIZ_AXIS_TEXT, fontSize: 12 }}
             />
-            {stages.map((stage, index) => (
+            {stages.map((stage) => (
               <Bar
                 key={stage.id}
                 dataKey={stage.id}
@@ -137,7 +148,7 @@ export function PipelineChart({ rows, stages }: PipelineChartProps) {
                 fill={stageColors.get(stage.id)}
                 isAnimationActive={false}
               >
-                {index === stages.length - 1 && (
+                {stage.id === ANCHOR_STAGE_ID && (
                   <LabelList
                     dataKey="total"
                     position="right"

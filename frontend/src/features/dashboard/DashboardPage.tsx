@@ -93,6 +93,7 @@ export function DashboardPage() {
         customEnd={customEnd}
         onCustomStartChange={setCustomStart}
         onCustomEndChange={setCustomEnd}
+        range={range}
       />
 
       {data.error && <p className={styles.error}>{data.error}</p>}

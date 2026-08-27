@@ -3,6 +3,7 @@ import {
   computePeriodRange,
   computeSeasonRange,
   endOfLocalDay,
+  formatPeriodRangeLabel,
   startOfLocalDay,
   validateCustomRange,
 } from './period'
@@ -121,5 +122,21 @@ describe('computePeriodRange', () => {
     expect(
       computePeriodRange('custom', today, { start: '2026-08-10', end: '2026-08-01' }),
     ).toBeNull()
+  })
+})
+
+describe('formatPeriodRangeLabel', () => {
+  it("labels 'overall' (range === null) as 'All time'", () => {
+    expect(formatPeriodRangeLabel(null)).toBe('All time')
+  })
+
+  it('labels a real range with both resolved calendar dates', () => {
+    const range = { start: new Date(2026, 7, 23, 0, 0, 0, 0), end: new Date(2026, 7, 26, 23, 59, 59, 999) }
+    expect(formatPeriodRangeLabel(range)).toBe('Aug 23, 2026 – Aug 26, 2026')
+  })
+
+  it('labels a single-day custom range with the same date on both sides', () => {
+    const range = { start: new Date(2026, 0, 5, 0, 0, 0, 0), end: new Date(2026, 0, 5, 23, 59, 59, 999) }
+    expect(formatPeriodRangeLabel(range)).toBe('Jan 5, 2026 – Jan 5, 2026')
   })
 })

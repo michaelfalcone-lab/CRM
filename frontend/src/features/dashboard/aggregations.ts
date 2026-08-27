@@ -174,7 +174,16 @@ export function computeTotalOutput(
       if (index === 0) {
         row.initialOutreach += 1
       } else {
-        row[LATER_TOUCH_BUCKET[activity.type]] += 1
+        // `LATER_TOUCH_BUCKET[activity.type]` is `undefined` for a `type`
+        // outside the current `ActivityType` union — legacy data, or an
+        // activity created by `commitImport` from an imported CSV whose
+        // type string doesn't (or no longer) matches exactly. Without the
+        // `?? 'followUps'` fallback, `row[undefined]` silently creates a
+        // stray `NaN` property on the row rather than throwing or losing
+        // the count — lossy AND silent. Follow-ups is the catch-all
+        // bucket for "a later touch that isn't a recognized call/email/
+        // meeting", so it's the correct home for an unrecognized type too.
+        row[LATER_TOUCH_BUCKET[activity.type] ?? 'followUps'] += 1
       }
     })
   }

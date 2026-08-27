@@ -20,7 +20,7 @@ import { renderHook } from '@testing-library/react'
 
 const whereMock = vi.fn((...args: unknown[]) => ({ __where: args }))
 const collectionMock = vi.fn((...args: unknown[]) => ({ __collection: args.slice(1) }))
-const onSnapshotMock = vi.fn((_query: unknown, _onNext: unknown, _onError: unknown) => vi.fn())
+const onSnapshotMock = vi.fn((..._args: unknown[]) => vi.fn())
 const fromDateMock = vi.fn((d: Date) => ({ __ts: d.getTime() }))
 
 vi.mock('firebase/firestore', () => ({

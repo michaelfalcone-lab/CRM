@@ -148,3 +148,22 @@ export function computePeriodRange(
     }
   }
 }
+
+/**
+ * A short, human-readable label for the resolved date range this preset
+ * actually queries — e.g. "Aug 1 – Aug 27, 2026", or "All time" for
+ * `'overall'` (`range === null`).
+ *
+ * No preset otherwise displays which concrete dates it's summing —
+ * "Week"/"Season" alone doesn't tell a manager judging rep performance
+ * what's actually in scope, and this is also the one place on screen that
+ * makes `startOfWeek`'s Sunday-start convention visible (there's no other
+ * indication of it anywhere in the UI). `PeriodSelector` renders this
+ * next to the preset buttons.
+ */
+export function formatPeriodRangeLabel(range: PeriodRange | null): string {
+  if (!range) return 'All time'
+  const fmt = (date: Date) =>
+    date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+  return `${fmt(range.start)} – ${fmt(range.end)}`
+}

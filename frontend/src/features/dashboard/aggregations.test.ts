@@ -138,6 +138,36 @@ describe('computeTotalOutput', () => {
     expect(rows.every((r) => r.total === 0)).toBe(true)
     expect(teamTotal.total).toBe(0)
   })
+
+  it('a later touch whose type is outside the ActivityType union (legacy/imported data) lands in Follow-ups, not a stray NaN property', () => {
+    // `commitImport` genuinely ingests activities from CSV, and legacy
+    // data can predate a type-value rename — either way, `type` can be a
+    // string that doesn't match any of `LATER_TOUCH_BUCKET`'s keys at
+    // runtime, even though `ActivityLike.type` is statically typed as
+    // `ActivityType`. This must fall back to Follow-ups (the catch-all
+    // "later touch that isn't a recognized call/email/meeting"), not
+    // silently create `row[undefined]` as a `NaN` property.
+    const activities = [
+      activity({ contactId: 'c1', ownerId: 'rep-a', type: 'Email', occurredAt: ts(new Date(2026, 7, 1)) }),
+      activity({
+        contactId: 'c1',
+        ownerId: 'rep-a',
+        // Deliberately outside the `ActivityType` union — simulating
+        // legacy/imported data, not something the type system would let
+        // a normal caller construct.
+        type: 'Legacy Postcard' as unknown as ActivityLike['type'],
+        occurredAt: ts(new Date(2026, 7, 5)),
+      }),
+    ]
+    const { rows } = computeTotalOutput(activities, REPS)
+    const alice = rows.find((r) => r.ownerId === 'rep-a')!
+    expect(alice.followUps).toBe(1)
+    expect(alice.total).toBe(2)
+    expect(Number.isNaN(alice.calls)).toBe(false)
+    expect(Number.isNaN(alice.emails)).toBe(false)
+    expect(Number.isNaN(alice.meetings)).toBe(false)
+    expect(Number.isNaN(alice.followUps)).toBe(false)
+  })
 })
 
 describe('computeWinRate', () => {
