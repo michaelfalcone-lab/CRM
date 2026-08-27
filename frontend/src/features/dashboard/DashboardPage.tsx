@@ -45,10 +45,36 @@ export function DashboardPage() {
 
   const data = useDashboardData(range)
 
-  const reps: RepDirectoryEntry[] = useMemo(
-    () => owners.map((o) => ({ ownerId: o.authUid, displayName: o.displayName })),
-    [owners],
-  )
+  // Rows are the sales reps, plus any non-rep who actually owns data in this
+  // period. Previously every active user got a row, so managers — who don't
+  // carry a book of business — appeared as permanently-empty rows that made
+  // the charts harder to read and implied they were being measured.
+  //
+  // The "or owns data" half is load-bearing, not defensive: filtering to
+  // `role === 'rep'` alone would drop an admin-owned contact's activity from
+  // the rows while it still counted toward Team Total, so the visible rows
+  // would silently stop summing to the total shown beneath them. Including
+  // anyone with data keeps that invariant true (and it's asserted by
+  // `aggregations.test.ts`'s "Team Total equals the sum of visible rows").
+  const reps: RepDirectoryEntry[] = useMemo(() => {
+    const ownersWithData = new Set<string>()
+    for (const a of data.activities) ownersWithData.add(a.ownerId)
+    for (const o of data.opportunitiesCreated) ownersWithData.add(o.ownerId)
+    for (const o of data.opportunitiesWon) ownersWithData.add(o.ownerId)
+    // `opportunitiesLost` directly rather than the derived `pipelineScope`,
+    // which is declared below this memo — the union of the same three arrays.
+    for (const o of data.opportunitiesLost) ownersWithData.add(o.ownerId)
+
+    return owners
+      .filter((o) => o.role === 'rep' || ownersWithData.has(o.authUid))
+      .map((o) => ({ ownerId: o.authUid, displayName: o.displayName }))
+  }, [
+    owners,
+    data.activities,
+    data.opportunitiesCreated,
+    data.opportunitiesWon,
+    data.opportunitiesLost,
+  ])
 
   const totalOutput = useMemo(
     () => computeTotalOutput(data.activities, reps),

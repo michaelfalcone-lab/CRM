@@ -31,7 +31,7 @@ import {
 } from 'firebase/auth'
 import { httpsCallable, type FunctionsError } from 'firebase/functions'
 import { NOT_INVITED_REASON, type User } from 'shared'
-import { authBypassEnabled, devBypassUser } from '../lib/devAuthBypass'
+import { authBypassEnabled, devBypassUser, signInDevBypassUser } from '../lib/devAuthBypass'
 import { auth, functions } from '../lib/firebase'
 import { LoadingScreen } from './LoadingScreen'
 import { SignInScreen } from './SignInScreen'
@@ -74,7 +74,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
-    if (authBypassEnabled) return
+    if (authBypassEnabled) {
+      // The mock user is already in state; this additionally signs the Auth
+      // emulator in so Firestore requests carry a real identity and the
+      // security rules (which run unmodified) can actually authorize them.
+      void signInDevBypassUser()
+      return
+    }
 
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
       if (!firebaseUser) {

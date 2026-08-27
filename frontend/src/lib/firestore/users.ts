@@ -35,12 +35,17 @@
  */
 import { useEffect, useState } from 'react'
 import { collection, onSnapshot, orderBy, query, where } from 'firebase/firestore'
-import type { User } from 'shared'
+import type { Role, User } from 'shared'
 import { db } from '../firebase'
 
 export interface OwnerOption {
   authUid: string
   displayName: string
+  /** Carried so callers can distinguish sales reps from managers — the
+   * dashboard uses it to avoid rendering permanently-empty rows for admins
+   * who don't carry a book of business. Everyone still appears in the
+   * owner *picker*; this only affects per-rep reporting. */
+  role: Role
 }
 
 export interface UseOwnerDirectoryResult {
@@ -87,7 +92,7 @@ export function useOwnerDirectory(currentUser: User | null): UseOwnerDirectoryRe
           snapshot.docs
             .map((d) => d.data() as User)
             .filter((u): u is User & { authUid: string } => !!u.authUid)
-            .map((u) => ({ authUid: u.authUid, displayName: u.displayName })),
+            .map((u) => ({ authUid: u.authUid, displayName: u.displayName, role: u.role })),
         )
         setLoading(false)
       },

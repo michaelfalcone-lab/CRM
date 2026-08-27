@@ -74,8 +74,8 @@ describe('useOwnerDirectory', () => {
 
     await waitFor(() => expect(result.current.loading).toBe(false))
     expect(result.current.owners).toEqual([
-      { authUid: 'rep-1-uid', displayName: 'Rep One' },
-      { authUid: 'rep-2-uid', displayName: 'Rep Two' },
+      { authUid: 'rep-1-uid', displayName: 'Rep One', role: 'rep' },
+      { authUid: 'rep-2-uid', displayName: 'Rep Two', role: 'rep' },
     ])
     expect(result.current.isComplete).toBe(true)
   })
@@ -108,6 +108,8 @@ describe('useOwnerDirectory', () => {
       fakeUser({ authUid: null, displayName: 'Invited, Not Yet Linked', email: 'invited@brown.edu' }),
     ])
     await waitFor(() => expect(result.current.loading).toBe(false))
-    expect(result.current.owners).toEqual([{ authUid: 'rep-1-uid', displayName: 'Rep One' }])
+    expect(result.current.owners).toEqual([
+      { authUid: 'rep-1-uid', displayName: 'Rep One', role: 'rep' },
+    ])
   })
 })
