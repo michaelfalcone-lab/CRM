@@ -16,8 +16,9 @@
     "test:rules": "scripts/with-java.sh npx firebase emulators:exec --only firestore \"npx vitest run tests/rules/firestore.rules.test.ts\"",
     "test:functions": "scripts/with-java.sh npx firebase emulators:exec --only firestore,auth \"npx vitest run functions/src scripts\"",
     "test:frontend": "npm run test --workspace=frontend",
-    "verify": "npm run lint && npm run test:frontend && npm run test:rules && npm run test:functions && npm run build",
-    "deploy": "npm run lint && npm run test:frontend && npm run test:rules && npm run test:functions && npm run build && npx firebase deploy"
+    "build:shared": "npm run build --workspace=shared",
+    "verify": "npm run build:shared && npm run lint && npm run test:frontend && npm run test:rules && npm run test:functions && npm run build",
+    "deploy": "npm run build:shared && npm run lint && npm run test:frontend && npm run test:rules && npm run test:functions && npm run build && npx firebase deploy"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",

@@ -66,6 +66,7 @@
  */
 import { HttpsError, onCall } from 'firebase-functions/v2/https'
 import { Timestamp, type DocumentReference } from 'firebase-admin/firestore'
+import { LAST_CONTACT_MODES } from 'shared'
 import type { Contact, ImportBatch, LastContactMode, Organization } from 'shared'
 import { db } from '../lib/firebaseAdmin'
 import { requireActiveUser } from '../lib/config'
@@ -110,13 +111,11 @@ export interface CommitImportResult {
   errors: CommitImportRowError[]
 }
 
-const LAST_CONTACT_MODES: ReadonlySet<string> = new Set([
-  'Email',
-  'Phone',
-  'In-Person',
-  'Text',
-  'Other',
-])
+/** Membership view over `shared`'s canonical `LAST_CONTACT_MODES`. Built
+ * from the shared list rather than re-typing the five literals, so this
+ * server-side validation can never drift from what the CSV importer's
+ * mapping step offers or what the contact edit form writes. */
+const LAST_CONTACT_MODE_SET: ReadonlySet<string> = new Set(LAST_CONTACT_MODES)
 const MAX_REPORTED_ERRORS = 50
 
 function parseLastContactDate(value: string | undefined): Timestamp | undefined {
@@ -128,7 +127,7 @@ function parseLastContactDate(value: string | undefined): Timestamp | undefined 
 }
 
 function parseLastContactMode(value: string | undefined): LastContactMode | undefined {
-  if (value && LAST_CONTACT_MODES.has(value)) return value as LastContactMode
+  if (value && LAST_CONTACT_MODE_SET.has(value)) return value as LastContactMode
   return undefined
 }
 

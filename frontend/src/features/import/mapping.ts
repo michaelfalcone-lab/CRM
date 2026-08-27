@@ -1,5 +1,5 @@
 import type { LastContactMode } from 'shared'
-import { LAST_CONTACT_MODES } from './types'
+import { LAST_CONTACT_MODES } from 'shared'
 import type { ColumnMapping, CommitImportRow, ImportField, MappingTarget } from './types'
 import { IGNORE_FIELD } from './types'
 

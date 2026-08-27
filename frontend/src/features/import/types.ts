@@ -55,11 +55,15 @@ export interface RevertImportBatchResult {
   skippedContactIds: string[]
 }
 
-/** The legacy 5-value union `commitImport` actually validates
- * `lastContactMode` against — NOT the 7-value `ActivityType` union used by
- * the dashboard's Log Contact flow. Do not offer the 7 activity types
- * here. */
-export const LAST_CONTACT_MODES: LastContactMode[] = ['Email', 'Phone', 'In-Person', 'Text', 'Other']
+/** NOTE: `LAST_CONTACT_MODES` (the legacy 5-value union `commitImport`
+ * validates `lastContactMode` against — NOT the 7-value `ActivityType`
+ * union used by the dashboard's Log Contact flow) lives in `shared` and is
+ * imported DIRECTLY from there by its consumers, deliberately not
+ * re-exported through this module. `shared` compiles to CommonJS, and a
+ * re-export chain out of a linked CJS workspace package resolves to
+ * `undefined` at runtime under Vite/esbuild's interop — the same hazard
+ * `shared/src/constants.ts` documents for `export *`. Import it from
+ * 'shared', not from here. */
 
 /** The CSV mapping step's target fields — exactly `CommitImportRow`'s own
  * keys, plus the synthetic "Ignore" choice for a column that shouldn't be

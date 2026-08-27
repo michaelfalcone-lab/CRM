@@ -3,7 +3,7 @@ import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import { useNavigate, useParams } from 'react-router-dom'
-import type { LastContactMode } from 'shared'
+import { LAST_CONTACT_MODES, type LastContactMode } from 'shared'
 import { Button, Card, Select, TextField } from '../../components/ui'
 import { useCurrentUser } from '../../app/AuthProvider'
 import {
@@ -17,8 +17,6 @@ import {
 } from '../../lib'
 import { OrganizationCombobox, type OrganizationComboboxValue } from './OrganizationCombobox'
 import styles from './ContactFormView.module.css'
-
-const LAST_CONTACT_MODES: LastContactMode[] = ['Email', 'Phone', 'In-Person', 'Text', 'Other']
 
 const schema = z.object({
   firstName: z.string().trim().min(1, 'First name is required'),

@@ -9,4 +9,4 @@ export * from './types'
 // package directly in dev) can actually see this binding — `export *`
 // compiles to a runtime `__exportStar` helper call that such scanners
 // can't see through.
-export { NOT_INVITED_REASON, ACTIVITY_TYPES, LOST_REASONS } from './constants'
+export { NOT_INVITED_REASON, ACTIVITY_TYPES, LAST_CONTACT_MODES, LOST_REASONS } from './constants'

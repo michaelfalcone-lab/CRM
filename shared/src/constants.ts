@@ -3,7 +3,7 @@
  * Kept here (rather than duplicated as a literal in each workspace) so the
  * two sides of a callable's error contract can't silently drift apart.
  */
-import type { ActivityType, LostReason } from './types'
+import type { ActivityType, LastContactMode, LostReason } from './types'
 
 /**
  * The `HttpsError.details.reason` value the `linkAccount` callable
@@ -29,6 +29,29 @@ export const ACTIVITY_TYPES: readonly ActivityType[] = [
   'Outbound Call - VM',
   'Onsite Appointment',
   'Seat Visit',
+  'Other',
+]
+
+/**
+ * The legacy 5-value `Contact.lastContactMode` vocabulary, in display
+ * order. Deliberately distinct from — and coarser than — `ACTIVITY_TYPES`
+ * above: `Activity.type` distinguishes a connected call from a voicemail
+ * (which the sales dashboard's connection-rate math depends on), while
+ * this field only records the broad mode of the most recent touch.
+ *
+ * Canonical here because THREE places validate against this exact list and
+ * must never drift: `commitImport`'s server-side row validation, the CSV
+ * importer's column-mapping step, and the contact edit form. A value
+ * accepted by one and rejected by another shows up as rows silently
+ * failing to import — which is precisely the class of bug the importer's
+ * preview/backend parity rules exist to prevent. Named export for the same
+ * reason as `ACTIVITY_TYPES` above.
+ */
+export const LAST_CONTACT_MODES: readonly LastContactMode[] = [
+  'Email',
+  'Phone',
+  'In-Person',
+  'Text',
   'Other',
 ]
 
