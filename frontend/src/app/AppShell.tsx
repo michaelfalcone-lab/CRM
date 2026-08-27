@@ -10,6 +10,7 @@ interface NavItem {
 }
 
 const NAV_ITEMS: NavItem[] = [
+  { to: '/dashboard', label: 'Dashboard' },
   { to: '/contacts', label: 'Contacts' },
   { to: '/organizations', label: 'Organizations' },
   { to: '/import', label: 'Import' },

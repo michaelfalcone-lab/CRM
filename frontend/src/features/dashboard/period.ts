@@ -125,7 +125,18 @@ export function computePeriodRange(
     case 'season':
       return computeSeasonRange(today)
     case 'custom': {
-      if (!custom || validateCustomRange(custom.start, custom.end) !== null) return null
+      // `validateCustomRange` is lenient about an empty field (a caller
+      // deciding whether an incomplete range is even submittable yet) —
+      // that's a DIFFERENT question from "is this ready to compute a
+      // range from." Requiring both fields non-empty here, on top of the
+      // validation check, is what stops the very first render of the
+      // 'custom' preset (before either date picker has a value) from
+      // handing `parseLocalDateInput('')` an empty string, which parses
+      // to an Invalid Date and crashes downstream in `Timestamp.
+      // fromDate` — reproduced live during this task's manual
+      // verification simply by clicking "Custom" with no dates picked.
+      if (!custom || !custom.start || !custom.end) return null
+      if (validateCustomRange(custom.start, custom.end) !== null) return null
       return {
         start: startOfLocalDay(parseLocalDateInput(custom.start)),
         end: endOfLocalDay(parseLocalDateInput(custom.end)),

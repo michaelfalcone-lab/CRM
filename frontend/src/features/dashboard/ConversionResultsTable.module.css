@@ -1,0 +1,42 @@
+/**
+ * Dark-panel override for the shared `Table` primitives (`Table.module.css`
+ * default styling assumes a white page background — brown header,
+ * near-black body text, light gray zebra stripe — none of which read
+ * against this widget's dark brown panel). Scoped via a wrapper class on
+ * `<Table>` so these selectors (tag-qualified, e.g. `.darkTable th`) beat
+ * the base `.th`/`.td` rules on specificity regardless of stylesheet
+ * load order, without needing `!important`.
+ *
+ * Per the brand skill's table spec (references/data-viz.md), adapted for
+ * a dark surface: header uses the off-brand near-black (enough contrast
+ * against the brown panel it sits on — the brand brown itself would blend
+ * into the panel), white body text, and zebra striping in white at low
+ * opacity instead of black (invisible on a dark background).
+ */
+.darkTable {
+  font-variant-numeric: tabular-nums;
+}
+
+.darkTable th {
+  background: var(--viz-near-black);
+  color: var(--brand-white);
+  font-family: var(--font-heading);
+}
+
+.darkTable td {
+  color: var(--brand-white);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.15);
+}
+
+.darkTable td:first-child {
+  color: var(--viz-light-warm-gray);
+  font-family: var(--font-caption);
+}
+
+.darkTable tbody tr:nth-child(even) td {
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.teamTotalColumn {
+  font-weight: 700;
+}

@@ -1,0 +1,51 @@
+.page {
+  display: flex;
+  flex-direction: column;
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: 2fr 1fr;
+  grid-template-areas:
+    'output gauge'
+    'pipeline table';
+  gap: var(--space-5);
+  align-items: start;
+}
+
+.output {
+  grid-area: output;
+}
+.gauge {
+  grid-area: gauge;
+}
+.pipeline {
+  grid-area: pipeline;
+}
+.results {
+  grid-area: table;
+}
+
+@media (max-width: 960px) {
+  .grid {
+    grid-template-columns: 1fr;
+    grid-template-areas:
+      'output'
+      'gauge'
+      'pipeline'
+      'table';
+  }
+}
+
+.status {
+  color: var(--gray-600);
+  margin-bottom: var(--space-4);
+}
+
+.error {
+  /* Red text directly on the page's white background — NOT
+     `--color-danger-text` (white-on-red, meant for a filled badge), which
+     would be invisible here. */
+  color: var(--brand-red);
+  margin-bottom: var(--space-4);
+}

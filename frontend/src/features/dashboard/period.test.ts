@@ -108,6 +108,15 @@ describe('computePeriodRange', () => {
     expect(computePeriodRange('custom', today)).toBeNull()
   })
 
+  it("'custom' with both fields still empty strings returns null rather than crashing — this is DashboardPage's real initial state the moment 'Custom' is selected, before either date picker has a value (reproduced live: this exact case threw 'Invalid time value' before the fix)", () => {
+    expect(computePeriodRange('custom', today, { start: '', end: '' })).toBeNull()
+  })
+
+  it("'custom' with only one field filled in returns null, not a half-parsed range", () => {
+    expect(computePeriodRange('custom', today, { start: '2026-08-01', end: '' })).toBeNull()
+    expect(computePeriodRange('custom', today, { start: '', end: '2026-08-10' })).toBeNull()
+  })
+
   it("'custom' with an invalid (end before start) range returns null rather than a backwards range", () => {
     expect(
       computePeriodRange('custom', today, { start: '2026-08-10', end: '2026-08-01' }),

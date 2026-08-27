@@ -1,0 +1,27 @@
+.panel {
+  background: var(--brand-brown);
+  color: var(--brand-white);
+  border-radius: var(--radius-md);
+  padding: var(--space-5);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  min-width: 0; /* let charts shrink inside a CSS grid track */
+}
+
+/* The global stylesheet sets every heading to --brand-brown text, which
+   would be invisible on this panel's brown background — override to
+   white for any heading rendered inside a panel. */
+.panel h2,
+.panel h3,
+.panel h4 {
+  color: var(--brand-white);
+  margin: 0;
+}
+
+.subtitle {
+  font-family: var(--font-caption);
+  font-size: var(--font-size-caption);
+  color: var(--viz-light-warm-gray);
+  margin: calc(-1 * var(--space-2)) 0 0;
+}

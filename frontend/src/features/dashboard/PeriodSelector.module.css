@@ -1,0 +1,37 @@
+.wrap {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-4);
+  flex-wrap: wrap;
+  margin-bottom: var(--space-5);
+}
+
+.presets {
+  display: flex;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+.presetButton {
+  font-family: var(--font-caption);
+  font-size: var(--font-size-small);
+  font-weight: 600;
+  padding: 0.5em 1em;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--gray-300);
+  background: var(--brand-white);
+  color: var(--brand-brown);
+  cursor: pointer;
+}
+
+.presetButtonActive {
+  background: var(--brand-brown);
+  color: var(--brand-white);
+  border-color: var(--brand-brown);
+}
+
+.customRange {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+}

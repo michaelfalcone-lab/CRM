@@ -1,0 +1,59 @@
+.gaugeWrap {
+  position: relative;
+  display: flex;
+  justify-content: center;
+}
+
+.center {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  text-align: center;
+  pointer-events: none;
+}
+
+.percent {
+  font-family: var(--font-heading);
+  font-size: 2rem;
+  font-weight: 400;
+  line-height: 1;
+}
+
+.noData {
+  font-family: var(--font-caption);
+  font-size: var(--font-size-caption);
+  color: var(--viz-light-warm-gray);
+}
+
+.counts {
+  display: flex;
+  justify-content: center;
+  gap: var(--space-4);
+  font-family: var(--font-caption);
+  font-size: var(--font-size-caption);
+}
+
+.wonCount::before {
+  content: '';
+  display: inline-block;
+  width: 0.6em;
+  height: 0.6em;
+  border-radius: 999px;
+  background: var(--brand-brown);
+  border: 1px solid var(--brand-white);
+  margin-right: 0.35em;
+  vertical-align: middle;
+}
+
+.lostCount::before {
+  content: '';
+  display: inline-block;
+  width: 0.6em;
+  height: 0.6em;
+  border-radius: 999px;
+  background: var(--brand-red);
+  border: 1px solid var(--brand-white);
+  margin-right: 0.35em;
+  vertical-align: middle;
+}

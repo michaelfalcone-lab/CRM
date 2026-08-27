@@ -165,6 +165,23 @@
   --color-neutral-text: var(--gray-700);
   --color-neutral-border: var(--gray-300);
 
+  /* ---- Sales-output dashboard's extended neutral ramp. OFF-BRAND — not
+         part of the official 3-color palette above. Sourced verbatim from
+         the `anthropic-skills:brown-athletics-brand` skill's
+         `references/data-viz.md`, which documents this exact ramp as the
+         sanctioned fallback for a chart that needs more series than
+         brown/red/white can carry (the dashboard's 5-segment Total Output
+         bar and 5-segment Pipeline bar). These are deliberately neutral
+         grays, never tints/shades of brand brown or red — a "60% brown"
+         would read as a modified brand color, a gray reads as chrome.
+         Used ONLY by `frontend/src/features/dashboard`; if any of this
+         dashboard is ever surfaced to Learfield/a partner/the public,
+         flag these for Brand Management's sign-off per that guide. ---- */
+  --viz-warm-gray: #7a6a5f;
+  --viz-light-warm-gray: #a89d94;
+  --viz-near-black: #2f2f2f;
+  --viz-mid-gray: #8c8c8c;
+
   /* ---- Type families ---- */
   --font-heading: 'Heron Serif', Georgia, 'Times New Roman', serif;
   --font-body: 'Ibis Display', Georgia, 'Times New Roman', serif;

@@ -51,12 +51,17 @@ export interface OpportunityLike {
 }
 
 /** The minimal shape needed from an `OpportunityStage` doc for the
- * Pipeline widget's per-stage segments. */
+ * Pipeline widget's per-stage segments. `isWon`/`isLost` aren't read by
+ * `computePipeline` itself (grouping is purely by `stage` id/`order`) but
+ * are carried through so `PipelineChart` can pick each segment's color
+ * off the flags rather than hardcoding a stage id. */
 export interface StageLike {
   id: string
   label: string
   order: number
   color: string
+  isWon?: boolean
+  isLost?: boolean
 }
 
 function toMillis(ts: FirestoreTimestamp): number {

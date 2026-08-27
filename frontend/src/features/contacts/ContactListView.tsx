@@ -1,6 +1,6 @@
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import type { FirestoreTimestamp } from 'shared'
+import type { Contact, FirestoreTimestamp } from 'shared'
 import {
   Badge,
   Button,
@@ -15,6 +15,7 @@ import {
 } from '../../components/ui'
 import { useCurrentUser } from '../../app/AuthProvider'
 import { ownerLabel, toBadgeColor, useContacts, useOwnerDirectory, useStatuses } from '../../lib'
+import type { WithId } from '../../lib/firestoreTypes'
 import styles from './ContactListView.module.css'
 
 function formatDate(ts: FirestoreTimestamp | undefined): string {
@@ -22,8 +23,28 @@ function formatDate(ts: FirestoreTimestamp | undefined): string {
   return new Date(ts.seconds * 1000).toLocaleDateString()
 }
 
+/** Sorts contacts by `lastContactDate` ascending, with a never-contacted
+ * contact (no `lastContactDate` at all) treated as the oldest possible
+ * value so it sorts first alongside genuinely stale contacts — this is
+ * the list's default sort ("oldest/never-contacted first") so duplicate
+ * outreach onto a recently-touched contact is visible at a glance, and a
+ * contact nobody has ever reached surfaces at the very top rather than
+ * being buried wherever `orderBy('lastName')` happened to place it.
+ * Exported (not just used inline) so it's directly unit-testable. */
+export function sortByLastContactedFirst(contacts: WithId<Contact>[]): WithId<Contact>[] {
+  return [...contacts].sort((a, b) => {
+    const aMillis = a.lastContactDate ? a.lastContactDate.seconds : -Infinity
+    const bMillis = b.lastContactDate ? b.lastContactDate.seconds : -Infinity
+    return aMillis - bMillis
+  })
+}
+
 /** Contacts list: table of name/organization/status/owner/last-contact,
- * with status + owner filters and a "My Contacts" quick filter. */
+ * with status + owner filters and a "My Contacts" quick filter. Default
+ * sort is oldest/never-contacted first (`sortByLastContactedFirst`,
+ * applied client-side over whatever `useContacts` already fetched), so
+ * duplicate outreach onto a recently-touched contact is visible at a
+ * glance (Task 8b). */
 export function ContactListView() {
   const navigate = useNavigate()
   const { user } = useCurrentUser()
@@ -41,6 +62,7 @@ export function ContactListView() {
     status: statusFilter || undefined,
     ownerId: effectiveOwnerId,
   })
+  const sortedContacts = useMemo(() => sortByLastContactedFirst(contacts), [contacts])
 
   const statusById = new Map(statuses.map((s) => [s.id, s]))
   const statusOptions = statuses.map((s) => ({ value: s.id, label: s.label }))
@@ -93,8 +115,8 @@ export function ContactListView() {
       <Card>
         {error && <p className={styles.error}>{error}</p>}
         {!error && loading && <p>Loading…</p>}
-        {!error && !loading && contacts.length === 0 && <p>No contacts found.</p>}
-        {!error && !loading && contacts.length > 0 && (
+        {!error && !loading && sortedContacts.length === 0 && <p>No contacts found.</p>}
+        {!error && !loading && sortedContacts.length > 0 && (
           <Table>
             <TableHead>
               <TableRow>
@@ -106,7 +128,7 @@ export function ContactListView() {
               </TableRow>
             </TableHead>
             <TableBody>
-              {contacts.map((contact) => {
+              {sortedContacts.map((contact) => {
                 const status = contact.status ? statusById.get(contact.status) : undefined
                 return (
                   <TableRow key={contact.id}>
