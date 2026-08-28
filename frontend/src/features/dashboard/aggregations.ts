@@ -3,7 +3,7 @@
  * no React — every function here takes plain arrays/objects already
  * fetched by `useDashboardData` and returns plain result objects, so the
  * dashboard's actual math is fully unit-testable without a browser or
- * emulator. Components (`TotalOutputChart`, `WinRateGauge`,
+ * emulator. Components (`TotalOutputChart`, `ConnectionRateGauge`,
  * `ConversionResultsTable`, `PipelineChart`) call these and render the
  * result — they must never compute counts inline.
  *
@@ -65,10 +65,6 @@ export interface StageLike {
   isLost?: boolean
 }
 
-function toMillis(ts: FirestoreTimestamp): number {
-  return ts.seconds * 1000 + Math.floor(ts.nanoseconds / 1e6)
-}
-
 /** Merges any number of `Opportunity` lists into one deduplicated-by-id
  * array. Used to combine the three separate `createdAt`/`wonAt`/`lostAt`
  * period queries into the single set the Pipeline widget scopes against
@@ -88,11 +84,12 @@ export function unionOpportunities<T extends { id: string }>(...lists: T[][]): T
 // Widget 1: Total Output
 // ---------------------------------------------------------------------------
 
-/** `ActivityType` -> Total Output bucket, for every type EXCEPT a
- * contact's earliest touch in the period (which is always `Initial
- * Outreach` regardless of type — handled separately in
- * `computeTotalOutput`, not via this table). */
-const LATER_TOUCH_BUCKET: Record<ActivityType, 'calls' | 'emails' | 'meetings' | 'followUps'> = {
+/** `ActivityType` -> Total Output bucket. Every activity in the period is
+ * bucketed by method through this table — there is no longer a special
+ * "first touch of a contact" bucket. `Other` (and any unrecognized type)
+ * falls to `followUps`, the catch-all for a touch that isn't a
+ * recognized call/email/meeting. */
+const TOUCH_BUCKET: Record<ActivityType, 'calls' | 'emails' | 'meetings' | 'followUps'> = {
   'Inbound Call': 'calls',
   'Outbound Call - Talked To': 'calls',
   'Outbound Call - VM': 'calls',
@@ -109,7 +106,6 @@ const LATER_TOUCH_BUCKET: Record<ActivityType, 'calls' | 'emails' | 'meetings' |
 export interface RepOutputRow {
   ownerId: string
   displayName: string
-  initialOutreach: number
   calls: number
   emails: number
   meetings: number
@@ -130,21 +126,21 @@ export interface TotalOutputResult {
 }
 
 function emptyOutputRow(ownerId: string, displayName: string): RepOutputRow {
-  return { ownerId, displayName, initialOutreach: 0, calls: 0, emails: 0, meetings: 0, followUps: 0, total: 0 }
+  return { ownerId, displayName, calls: 0, emails: 0, meetings: 0, followUps: 0, total: 0 }
 }
 
 /**
- * Bucketing rule (see the brief): group the period's activities by
- * `contactId`; within each contact's group, the chronologically EARLIEST
- * activity is `Initial Outreach` regardless of its `type`, and every
- * later activity for that same contact buckets by `type` via
- * `LATER_TOUCH_BUCKET`. "Earliest" is determined across ALL activities
- * for that contact in the period, regardless of which rep logged
- * them — ownership reassignment mid-period is possible (an activity's
- * `ownerId` is a snapshot at log time), so a contact's touch sequence is
- * a single timeline independent of who owns which touch; only the final
- * per-rep credit (which row/bucket cell gets incremented) uses each
- * activity's own `ownerId`.
+ * Bucketing rule: every activity in the period counts once, bucketed by
+ * its `type` via `TOUCH_BUCKET`, and credited to the rep in the
+ * activity's own `ownerId` (a snapshot at log time — so a contact
+ * reassigned mid-period splits its touches across both reps' rows, which
+ * is correct: each rep is credited with the work they actually logged).
+ *
+ * An earlier version singled out each contact's chronologically first
+ * touch in the period as a separate "Initial Outreach" bucket, which is
+ * why this used to group by `contactId` and sort. That bucket was
+ * removed: a first call is a call. Nothing here depends on activity
+ * order any more, so the grouping and sort are gone with it.
  */
 export function computeTotalOutput(
   activities: ActivityLike[],
@@ -153,44 +149,20 @@ export function computeTotalOutput(
   const rows = new Map<string, RepOutputRow>()
   for (const rep of reps) rows.set(rep.ownerId, emptyOutputRow(rep.ownerId, rep.displayName))
 
-  const byContact = new Map<string, ActivityLike[]>()
   for (const activity of activities) {
-    const list = byContact.get(activity.contactId)
-    if (list) list.push(activity)
-    else byContact.set(activity.contactId, [activity])
-  }
-
-  for (const contactActivities of byContact.values()) {
-    // Stable ordering: occurredAt first, createdAt as a tiebreak for two
-    // activities logged for the same local day, then id for full
-    // determinism (two activities can share both timestamps exactly).
-    const sorted = [...contactActivities].sort((a, b) => {
-      const byOccurred = toMillis(a.occurredAt) - toMillis(b.occurredAt)
-      if (byOccurred !== 0) return byOccurred
-      const byCreated = toMillis(a.createdAt) - toMillis(b.createdAt)
-      if (byCreated !== 0) return byCreated
-      return a.id < b.id ? -1 : a.id > b.id ? 1 : 0
-    })
-
-    sorted.forEach((activity, index) => {
-      const row = rows.get(activity.ownerId)
-      if (!row) return // ownerId not in the current active directory — see teamTotal's doc comment
-      row.total += 1
-      if (index === 0) {
-        row.initialOutreach += 1
-      } else {
-        // `LATER_TOUCH_BUCKET[activity.type]` is `undefined` for a `type`
-        // outside the current `ActivityType` union — legacy data, or an
-        // activity created by `commitImport` from an imported CSV whose
-        // type string doesn't (or no longer) matches exactly. Without the
-        // `?? 'followUps'` fallback, `row[undefined]` silently creates a
-        // stray `NaN` property on the row rather than throwing or losing
-        // the count — lossy AND silent. Follow-ups is the catch-all
-        // bucket for "a later touch that isn't a recognized call/email/
-        // meeting", so it's the correct home for an unrecognized type too.
-        row[LATER_TOUCH_BUCKET[activity.type] ?? 'followUps'] += 1
-      }
-    })
+    const row = rows.get(activity.ownerId)
+    if (!row) continue // ownerId not in the current active directory — see teamTotal's doc comment
+    row.total += 1
+    // `TOUCH_BUCKET[activity.type]` is `undefined` for a `type` outside
+    // the current `ActivityType` union — legacy data, or an activity
+    // created by `commitImport` from an imported CSV whose type string
+    // doesn't (or no longer) matches exactly. Without the `?? 'followUps'`
+    // fallback, `row[undefined]` silently creates a stray `NaN` property
+    // on the row rather than throwing or losing the count — lossy AND
+    // silent. Follow-ups is the catch-all bucket for "a touch that isn't
+    // a recognized call/email/meeting", so it's the correct home for an
+    // unrecognized type too.
+    row[TOUCH_BUCKET[activity.type] ?? 'followUps'] += 1
   }
 
   const rowList = reps.map((rep) => rows.get(rep.ownerId)!)
@@ -198,7 +170,6 @@ export function computeTotalOutput(
     (acc, row) => ({
       ownerId: '__team__',
       displayName: 'Team Total',
-      initialOutreach: acc.initialOutreach + row.initialOutreach,
       calls: acc.calls + row.calls,
       emails: acc.emails + row.emails,
       meetings: acc.meetings + row.meetings,
@@ -212,27 +183,29 @@ export function computeTotalOutput(
 }
 
 // ---------------------------------------------------------------------------
-// Widget 2: Win Rate
+// Widget 2: Connection Rate
 // ---------------------------------------------------------------------------
 
 /**
- * The activity types that mark a contact as having RESPONDED — imported
- * from `shared` rather than defined here now, since it's also used by
- * `frontend/src/lib/statusWorkflow.ts` to drive Active→Warm status
+ * The activity types that mark a contact as having CONNECTED (responded)
+ * — imported from `shared` rather than defined here now, since it's also
+ * used by `frontend/src/lib/statusWorkflow.ts` to drive Active→Warm status
  * advancement (a `lib/` module can't import a `features/` module in this
  * codebase's layering, so the shared home is the one both sides can use).
- * See its doc comment in `shared/src/constants.ts` for the full rationale.
+ * Its name predates the "Connection Rate" label and is deliberately left
+ * alone — renaming it would churn the status workflow for no behaviour
+ * change. See its doc comment in `shared/src/constants.ts`.
  */
 const WIN_ACTIVITY_TYPE_SET: ReadonlySet<ActivityType> = new Set(WIN_ACTIVITY_TYPES)
 
-export interface ContactResponseRateResult {
-  /** Distinct contacts with at least one qualifying response, ever. */
-  respondedCount: number
+export interface ConnectionRateResult {
+  /** Distinct contacts with at least one qualifying connection, ever. */
+  connectedCount: number
   /** All contacts owned by a rep in the directory. */
   totalCount: number
-  /** `respondedCount / totalCount`, or `null` when there are no contacts
+  /** `connectedCount / totalCount`, or `null` when there are no contacts
    * at all — callers must render that explicitly (e.g. "—"), never coerce
-   * to 0%, which would read as "nobody responds" rather than "no data". */
+   * to 0%, which would read as "nobody connects" rather than "no data". */
   rate: number | null
 }
 
@@ -247,8 +220,9 @@ export interface ResponseActivityLike {
 }
 
 /**
- * The dashboard's "Win Rate": of every contact the team owns, what share
- * have actually responded to outreach.
+ * The dashboard's "Connection Rate": of every contact the team owns, what
+ * share have actually connected back (answered, replied, or returned a
+ * voicemail). Formerly labelled "Win Rate" — same calculation.
  *
  * Deliberately NOT period-scoped, unlike every other widget — it answers
  * "of everyone we're responsible for, how many have ever engaged", which
@@ -258,17 +232,17 @@ export interface ResponseActivityLike {
  * shrinks and read as a collapse in performance.
  *
  * Counts distinct CONTACTS, not activities — five replies from one
- * prospect is one responsive contact, not five. `respondedCount` can
+ * prospect is one responsive contact, not five. `connectedCount` can
  * therefore never exceed `totalCount`, including when activity exists for
  * a contact outside the given set (deleted, merged away, or owned by
  * someone off the directory): such activity is ignored rather than
  * counted, which would otherwise render as a rate above 100%.
  */
-export function computeContactResponseRate(
+export function computeConnectionRate(
   contacts: ContactLike[],
   activities: ResponseActivityLike[],
   reps: RepDirectoryEntry[],
-): ContactResponseRateResult {
+): ConnectionRateResult {
   const repIds = new Set(reps.map((rep) => rep.ownerId))
   const ownedContactIds = new Set(
     contacts.filter((contact) => repIds.has(contact.ownerId)).map((contact) => contact.id),
@@ -285,7 +259,7 @@ export function computeContactResponseRate(
 
   const totalCount = ownedContactIds.size
   return {
-    respondedCount: responded.size,
+    connectedCount: responded.size,
     totalCount,
     rate: totalCount === 0 ? null : responded.size / totalCount,
   }

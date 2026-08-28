@@ -27,7 +27,7 @@
  * filter entirely for `'overall'` would therefore return the WHOLE
  * `opportunities` collection for both the won and lost queries — every
  * still-open opportunity counted as both won AND lost — silently
- * wrecking the Win Rate gauge (this was caught in this task's own manual
+ * wrecking the Connection Rate gauge (this was caught in this task's own manual
  * emulator walk: seeded 2 won / 1 lost out of 6 total opportunities
  * rendered as "6 Won, 6 Lost" before this fix). So for `wonAt`/`lostAt`
  * specifically, `'overall'` still applies a `>= epoch` floor — logically
@@ -118,7 +118,7 @@ function useRangeQuery<T>(
 /**
  * Every response-type activity, ALL TIME — deliberately not period-scoped.
  *
- * The Win Rate widget asks "of everyone we own, how many have ever
+ * The Connection Rate widget asks "of everyone we own, how many have ever
  * responded", so it can't reuse the period-scoped `activities` query
  * above: that would shrink the numerator with the date filter while the
  * denominator (all owned contacts) stayed fixed, making the rate collapse
@@ -158,7 +158,7 @@ export interface DashboardData {
   opportunitiesCreated: WithId<Opportunity>[]
   opportunitiesWon: WithId<Opportunity>[]
   opportunitiesLost: WithId<Opportunity>[]
-  /** All-time response activities, for the Win Rate widget only — every
+  /** All-time response activities, for the Connection Rate widget only — every
    * other field here is period-scoped. */
   responseActivities: WithId<Activity>[]
   loading: boolean

@@ -73,7 +73,7 @@ describe('phoneDigitCount / isValidPhoneDigitCount', () => {
     expect(isValidPhoneDigitCount(undefined)).toBe(true)
   })
 
-  it('rejects a partial count — the accepted-401-default-only case must not pass', () => {
+  it('rejects a partial count — an area code alone must not pass', () => {
     // '401-' alone: 3 digits, no real local number typed yet.
     expect(isValidPhoneDigitCount('401-')).toBe(false)
   })

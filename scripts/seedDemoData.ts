@@ -61,12 +61,12 @@ const STAGES = [
 ] as const
 
 /**
- * The automated status workflow (New Lead -> Active -> Warm -> Win/Dead) —
+ * The automated status workflow (New Lead -> Active -> Warm -> Win/Lost) —
  * full replacement of the earlier 4-value set (New Lead/Active/Past
  * Customer/Do Not Contact). `id`s are load-bearing: `advanceStatusOnActivity`
- * (`frontend/src/lib/statusWorkflow.ts`) and `updateOpportunity`'s Win/Dead
+ * (`frontend/src/lib/statusWorkflow.ts`) and `updateOpportunity`'s Win/Lost
  * sync both hardcode these exact ids ('new-lead'/'active'/'warm'/'win'/
- * 'dead'), matching the same "hardcoded ids, not admin-configurable" pattern
+ * 'lost'), matching the same "hardcoded ids, not admin-configurable" pattern
  * `opportunityStages`' isWon/isLost flags already use for the same reason.
  */
 const STATUSES = [
@@ -74,7 +74,7 @@ const STATUSES = [
   { id: 'active', label: 'Active', order: 2, color: 'primary' },
   { id: 'warm', label: 'Warm', order: 3, color: 'warning' },
   { id: 'win', label: 'Win', order: 4, color: 'success' },
-  { id: 'dead', label: 'Dead', order: 5, color: 'danger' },
+  { id: 'lost', label: 'Lost', order: 5, color: 'danger' },
 ]
 
 const ORGS = [
@@ -112,12 +112,12 @@ interface DemoContact {
 }
 
 // Statuses below are set to match what the real automated workflow
-// (`advanceStatusOnActivity` + `updateOpportunity`'s Win/Dead sync) would
+// (`advanceStatusOnActivity` + `updateOpportunity`'s Win/Lost sync) would
 // actually produce for each contact, given the activities and opportunity
 // outcomes this file seeds for them below — not just a renamed copy of the
 // old 4-value set. Specifically: c-01/c-02/c-03 have a Won opportunity
 // (`OPPS` below) -> 'win'; c-04/c-07 have a Lost opportunity and no Won
-// one -> 'dead' (c-07's Lost beats the response activity it also has —
+// one -> 'lost' (c-07's Lost beats the response activity it also has —
 // only Win is protected from a later Lost, per the tie-break rule); c-06/
 // c-08 have a seeded response-type activity and no won/lost opportunity ->
 // 'warm'; c-05 has been contacted (lastDays/mode set) but hasn't responded
@@ -126,10 +126,10 @@ const CONTACTS: DemoContact[] = [
   { id: 'c-01', first: 'Marcus', last: 'Bell', email: 'mbell@example.com', phone: '4015550101', org: 'org-acme', owner: 'uid-michael', status: 'win', lastDays: 2, mode: 'Phone' },
   { id: 'c-02', first: 'Priya', last: 'Raman', email: 'praman@example.com', phone: '4015550102', org: 'org-acme', owner: 'uid-michael', status: 'win', lastDays: 5, mode: 'Email' },
   { id: 'c-03', first: 'Tom', last: 'Delgado', email: 'tdelgado@example.com', org: 'org-hoyt', owner: 'uid-jordan', status: 'win', lastDays: 1, mode: 'Phone' },
-  { id: 'c-04', first: 'Susan', last: 'Chen', email: 'schen@example.com', phone: '4015550104', org: 'org-hoyt', owner: 'uid-jordan', status: 'dead', lastDays: 9, mode: 'In-Person' },
+  { id: 'c-04', first: 'Susan', last: 'Chen', email: 'schen@example.com', phone: '4015550104', org: 'org-hoyt', owner: 'uid-jordan', status: 'lost', lastDays: 9, mode: 'In-Person' },
   { id: 'c-05', first: 'Andre', last: 'Whitlock', email: 'awhitlock@example.com', owner: 'uid-michael', status: 'active', lastDays: 14, mode: 'Email' },
   { id: 'c-06', first: 'Grace', last: 'Nakamura', email: 'gnakamura@example.com', phone: '4015550106', org: 'org-eastside', owner: 'uid-michael', status: 'warm', lastDays: 3, mode: 'Phone' },
-  { id: 'c-07', first: 'Devin', last: 'Cross', email: 'dcross@example.com', owner: 'uid-jordan', status: 'dead', lastDays: 45, mode: 'Email' },
+  { id: 'c-07', first: 'Devin', last: 'Cross', email: 'dcross@example.com', owner: 'uid-jordan', status: 'lost', lastDays: 45, mode: 'Email' },
   { id: 'c-08', first: 'Lena', last: 'Moreau', email: 'lmoreau@example.com', phone: '4015550108', owner: 'uid-jordan', status: 'warm', lastDays: 7, mode: 'Phone' },
   // Never contacted — sorts to the top of the Contacts list (oldest-first).
   { id: 'c-09', first: 'Owen', last: 'Fitzgerald', email: 'ofitz@example.com', owner: 'uid-michael', status: 'new-lead' },
@@ -154,6 +154,8 @@ interface DemoOpp {
   contact: string
   org: string | null
   sport: string
+  year: string
+  productType: string
   stage: string
   owner: string
   createdDays: number
@@ -161,16 +163,16 @@ interface DemoOpp {
 }
 
 const OPPS: DemoOpp[] = [
-  { id: 'o-01', contact: 'c-01', org: 'org-acme', sport: 'Football', stage: 'won', owner: 'uid-michael', createdDays: 30, closedDays: 4 },
-  { id: 'o-02', contact: 'c-02', org: 'org-acme', sport: "Men's Basketball", stage: 'won', owner: 'uid-michael', createdDays: 26, closedDays: 6 },
-  { id: 'o-03', contact: 'c-06', org: 'org-eastside', sport: 'Football', stage: 'verbal-commit', owner: 'uid-michael', createdDays: 12 },
-  { id: 'o-04', contact: 'c-05', org: null, sport: "Women's Hockey", stage: 'in-conversation', owner: 'uid-michael', createdDays: 8 },
-  { id: 'o-05', contact: 'c-09', org: null, sport: 'Gymnastics', stage: 'created', owner: 'uid-michael', createdDays: 3 },
-  { id: 'o-06', contact: 'c-03', org: 'org-hoyt', sport: 'Football', stage: 'won', owner: 'uid-jordan', createdDays: 22, closedDays: 2 },
-  { id: 'o-07', contact: 'c-04', org: 'org-hoyt', sport: "Men's Hockey", stage: 'lost', owner: 'uid-jordan', createdDays: 20, closedDays: 9 },
-  { id: 'o-08', contact: 'c-08', org: null, sport: "Men's Lacrosse", stage: 'in-conversation', owner: 'uid-jordan', createdDays: 10 },
-  { id: 'o-09', contact: 'c-07', org: null, sport: 'Parking', stage: 'lost', owner: 'uid-jordan', createdDays: 40, closedDays: 15 },
-  { id: 'o-10', contact: 'c-10', org: null, sport: "Women's Basketball", stage: 'created', owner: 'uid-jordan', createdDays: 2 },
+  { id: 'o-01', contact: 'c-01', org: 'org-acme', sport: 'Football', year: '2026', productType: 'Season Tickets', stage: 'won', owner: 'uid-michael', createdDays: 30, closedDays: 4 },
+  { id: 'o-02', contact: 'c-02', org: 'org-acme', sport: "Men's Basketball", year: '2026', productType: 'Season Tickets', stage: 'won', owner: 'uid-michael', createdDays: 26, closedDays: 6 },
+  { id: 'o-03', contact: 'c-06', org: 'org-eastside', sport: 'Football', year: '2026', productType: 'Mini Plans', stage: 'verbal-commit', owner: 'uid-michael', createdDays: 12 },
+  { id: 'o-04', contact: 'c-05', org: null, sport: "Women's Hockey", year: '2027', productType: 'Individual Ticket', stage: 'in-conversation', owner: 'uid-michael', createdDays: 8 },
+  { id: 'o-05', contact: 'c-09', org: null, sport: 'Gymnastics', year: '2027', productType: 'Mini Plans', stage: 'created', owner: 'uid-michael', createdDays: 3 },
+  { id: 'o-06', contact: 'c-03', org: 'org-hoyt', sport: 'Football', year: '2026', productType: 'Season Tickets', stage: 'won', owner: 'uid-jordan', createdDays: 22, closedDays: 2 },
+  { id: 'o-07', contact: 'c-04', org: 'org-hoyt', sport: "Men's Hockey", year: '2026', productType: 'Season Tickets', stage: 'lost', owner: 'uid-jordan', createdDays: 20, closedDays: 9 },
+  { id: 'o-08', contact: 'c-08', org: null, sport: "Men's Lacrosse", year: '2027', productType: 'Mini Plans', stage: 'in-conversation', owner: 'uid-jordan', createdDays: 10 },
+  { id: 'o-09', contact: 'c-07', org: null, sport: 'Parking', year: '2026', productType: 'Individual Ticket', stage: 'lost', owner: 'uid-jordan', createdDays: 40, closedDays: 15 },
+  { id: 'o-10', contact: 'c-10', org: null, sport: "Women's Basketball", year: '2027', productType: 'Individual Ticket', stage: 'created', owner: 'uid-jordan', createdDays: 2 },
 ]
 
 const LOST_REASONS: Record<string, string> = { 'o-07': 'Cost', 'o-09': 'Past Poor Fan Experience' }
@@ -378,6 +380,8 @@ async function main() {
       contactId: o.contact,
       organizationId: o.org,
       sport: o.sport,
+      year: o.year,
+      productType: o.productType,
       stage: o.stage,
       ...(LOST_REASONS[o.id] ? { lostReason: LOST_REASONS[o.id] } : {}),
       ...('isWon' in stage && o.closedDays !== undefined ? { wonAt: daysAgo(o.closedDays) } : {}),

@@ -65,3 +65,9 @@
   font-size: var(--font-size-small);
   color: var(--gray-700);
 }
+
+/* The inline stage picker — narrow, and nudged to sit tight against the
+   summary text since its own "Stage" label already sits above it. */
+.stageSelect {
+  min-width: 9rem;
+}

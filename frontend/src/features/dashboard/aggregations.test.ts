@@ -4,7 +4,7 @@ import {
   computeConversionResults,
   computePipeline,
   computeTotalOutput,
-  computeContactResponseRate,
+  computeConnectionRate,
   unionOpportunities,
   type ActivityLike,
   type OpportunityLike,
@@ -31,34 +31,33 @@ function activity(overrides: Partial<ActivityLike> & Pick<ActivityLike, 'contact
 }
 
 describe('computeTotalOutput', () => {
-  it('a contact whose only activity in the period is a call lands in Initial Outreach, NOT Calls', () => {
+  it("counts a contact's only activity under its own method — a call is a call", () => {
+    // The inverse of the old rule: a first touch used to be pulled out
+    // into a separate "Initial Outreach" bucket regardless of its type.
     const activities = [
       activity({ contactId: 'c1', ownerId: 'rep-a', type: 'Outbound Call - Talked To', occurredAt: ts(new Date(2026, 7, 1)) }),
     ]
     const { rows } = computeTotalOutput(activities, REPS)
     const alice = rows.find((r) => r.ownerId === 'rep-a')!
-    expect(alice.initialOutreach).toBe(1)
-    expect(alice.calls).toBe(0)
+    expect(alice.calls).toBe(1)
     expect(alice.total).toBe(1)
   })
 
-  it('a later "Other"-type touch for the same contact lands in Follow-ups', () => {
+  it('an "Other"-type touch lands in Follow-ups', () => {
     const activities = [
       activity({ contactId: 'c1', ownerId: 'rep-a', type: 'Email', occurredAt: ts(new Date(2026, 7, 1)) }),
       activity({ contactId: 'c1', ownerId: 'rep-a', type: 'Other', occurredAt: ts(new Date(2026, 7, 5)) }),
     ]
     const { rows } = computeTotalOutput(activities, REPS)
     const alice = rows.find((r) => r.ownerId === 'rep-a')!
-    expect(alice.initialOutreach).toBe(1) // the Email, despite not being a call/meeting
-    expect(alice.followUps).toBe(1) // the later Other touch
-    expect(alice.emails).toBe(0) // NOT counted as a later "Emails" touch — it was the first touch
+    expect(alice.emails).toBe(1)
+    expect(alice.followUps).toBe(1)
     expect(alice.total).toBe(2)
   })
 
-  it('every later activity type buckets by its own method (Calls / Emails / Meetings / Follow-ups)', () => {
-    const base = new Date(2026, 7, 1)
+  it('every activity type buckets by its own method (Calls / Emails / Meetings / Follow-ups)', () => {
     const activities = [
-      activity({ contactId: 'c1', ownerId: 'rep-a', type: 'Other', occurredAt: ts(base) }), // Initial Outreach
+      activity({ contactId: 'c1', ownerId: 'rep-a', type: 'Other', occurredAt: ts(new Date(2026, 7, 1)) }),
       activity({ contactId: 'c1', ownerId: 'rep-a', type: 'Inbound Call', occurredAt: ts(new Date(2026, 7, 2)) }),
       activity({ contactId: 'c1', ownerId: 'rep-a', type: 'Outbound Call - VM', occurredAt: ts(new Date(2026, 7, 3)) }),
       activity({ contactId: 'c1', ownerId: 'rep-a', type: 'Email', occurredAt: ts(new Date(2026, 7, 4)) }),
@@ -66,11 +65,25 @@ describe('computeTotalOutput', () => {
     ]
     const { rows } = computeTotalOutput(activities, REPS)
     const alice = rows.find((r) => r.ownerId === 'rep-a')!
-    expect(alice.initialOutreach).toBe(1)
     expect(alice.calls).toBe(2) // Inbound Call + Outbound Call - VM
     expect(alice.emails).toBe(1)
     expect(alice.meetings).toBe(1) // Onsite Appointment
+    expect(alice.followUps).toBe(1) // Other
     expect(alice.total).toBe(5)
+  })
+
+  it('counts every touch of the same contact, not just the first', () => {
+    // Directly pins the removal of the first-touch special case: three
+    // calls to one contact are three calls.
+    const activities = [
+      activity({ contactId: 'c1', ownerId: 'rep-a', type: 'Outbound Call - VM', occurredAt: ts(new Date(2026, 7, 1)) }),
+      activity({ contactId: 'c1', ownerId: 'rep-a', type: 'Outbound Call - VM', occurredAt: ts(new Date(2026, 7, 2)) }),
+      activity({ contactId: 'c1', ownerId: 'rep-a', type: 'Outbound Call - Talked To', occurredAt: ts(new Date(2026, 7, 3)) }),
+    ]
+    const { rows } = computeTotalOutput(activities, REPS)
+    const alice = rows.find((r) => r.ownerId === 'rep-a')!
+    expect(alice.calls).toBe(3)
+    expect(alice.total).toBe(3)
   })
 
   it('a rep with zero activities in the period renders as an all-zero row, not omitted', () => {
@@ -83,7 +96,6 @@ describe('computeTotalOutput', () => {
     expect(bob).toEqual({
       ownerId: 'rep-b',
       displayName: 'Bob',
-      initialOutreach: 0,
       calls: 0,
       emails: 0,
       meetings: 0,
@@ -108,14 +120,11 @@ describe('computeTotalOutput', () => {
     const { rows, teamTotal } = computeTotalOutput(activities, REPS)
     const summed = rows.reduce((acc, r) => acc + r.total, 0)
     expect(teamTotal.total).toBe(summed)
-    expect(teamTotal.initialOutreach).toBe(2)
-    expect(teamTotal.emails).toBe(1) // Bob's second (later) touch
+    expect(teamTotal.emails).toBe(2) // Alice's + Bob's
+    expect(teamTotal.calls).toBe(1) // Bob's Inbound Call
   })
 
-  it('per-contact ordering spans all reps (not per-rep), crediting each touch to its own ownerId', () => {
-    // Same contact, reassigned mid-period: Alice's touch happens first
-    // (Initial Outreach), Bob's later touch on the SAME contact is a
-    // later touch bucketed by method, credited to Bob.
+  it('credits each touch of a mid-period-reassigned contact to its own ownerId', () => {
     const activities = [
       activity({ contactId: 'c1', ownerId: 'rep-a', type: 'Outbound Call - Talked To', occurredAt: ts(new Date(2026, 7, 1)) }),
       activity({ contactId: 'c1', ownerId: 'rep-b', type: 'Email', occurredAt: ts(new Date(2026, 7, 10)) }),
@@ -123,10 +132,10 @@ describe('computeTotalOutput', () => {
     const { rows } = computeTotalOutput(activities, REPS)
     const alice = rows.find((r) => r.ownerId === 'rep-a')!
     const bob = rows.find((r) => r.ownerId === 'rep-b')!
-    expect(alice.initialOutreach).toBe(1)
-    expect(alice.calls).toBe(0)
-    expect(bob.initialOutreach).toBe(0)
+    expect(alice.calls).toBe(1)
+    expect(alice.total).toBe(1)
     expect(bob.emails).toBe(1)
+    expect(bob.total).toBe(1)
   })
 
   it('an activity whose ownerId matches no current active rep is excluded from rows and Team Total alike', () => {
@@ -138,14 +147,14 @@ describe('computeTotalOutput', () => {
     expect(teamTotal.total).toBe(0)
   })
 
-  it('a later touch whose type is outside the ActivityType union (legacy/imported data) lands in Follow-ups, not a stray NaN property', () => {
+  it('a touch whose type is outside the ActivityType union (legacy/imported data) lands in Follow-ups, not a stray NaN property', () => {
     // `commitImport` genuinely ingests activities from CSV, and legacy
     // data can predate a type-value rename — either way, `type` can be a
-    // string that doesn't match any of `LATER_TOUCH_BUCKET`'s keys at
-    // runtime, even though `ActivityLike.type` is statically typed as
+    // string that doesn't match any of `TOUCH_BUCKET`'s keys at runtime,
+    // even though `ActivityLike.type` is statically typed as
     // `ActivityType`. This must fall back to Follow-ups (the catch-all
-    // "later touch that isn't a recognized call/email/meeting"), not
-    // silently create `row[undefined]` as a `NaN` property.
+    // "touch that isn't a recognized call/email/meeting"), not silently
+    // create `row[undefined]` as a `NaN` property.
     const activities = [
       activity({ contactId: 'c1', ownerId: 'rep-a', type: 'Email', occurredAt: ts(new Date(2026, 7, 1)) }),
       activity({
@@ -169,7 +178,7 @@ describe('computeTotalOutput', () => {
   })
 })
 
-describe('computeContactResponseRate', () => {
+describe('computeConnectionRate', () => {
   const REPS_CR: RepDirectoryEntry[] = [
     { ownerId: 'rep-a', displayName: 'Alice' },
     { ownerId: 'rep-b', displayName: 'Bob' },
@@ -178,55 +187,55 @@ describe('computeContactResponseRate', () => {
   const act = (contactId: string, type: ActivityType) => ({ contactId, type })
 
   it('returns a null rate (not 0, not NaN) when there are no contacts at all', () => {
-    const result = computeContactResponseRate([], [], REPS_CR)
-    expect(result).toEqual({ respondedCount: 0, totalCount: 0, rate: null })
+    const result = computeConnectionRate([], [], REPS_CR)
+    expect(result).toEqual({ connectedCount: 0, totalCount: 0, rate: null })
   })
 
   it('counts a contact as responded once it has an inbound call', () => {
-    const result = computeContactResponseRate(
+    const result = computeConnectionRate(
       [owned('c1'), owned('c2')],
       [act('c1', 'Inbound Call')],
       REPS_CR,
     )
-    expect(result).toEqual({ respondedCount: 1, totalCount: 2, rate: 0.5 })
+    expect(result).toEqual({ connectedCount: 1, totalCount: 2, rate: 0.5 })
   })
 
   it('does NOT count an outbound email that has no reply logged against it', () => {
-    const result = computeContactResponseRate([owned('c1')], [act('c1', 'Email')], REPS_CR)
-    expect(result).toEqual({ respondedCount: 0, totalCount: 1, rate: 0 })
+    const result = computeConnectionRate([owned('c1')], [act('c1', 'Email')], REPS_CR)
+    expect(result).toEqual({ connectedCount: 0, totalCount: 1, rate: 0 })
   })
 
   it('does NOT count a voicemail left with no callback logged', () => {
-    const result = computeContactResponseRate(
+    const result = computeConnectionRate(
       [owned('c1')],
       [act('c1', 'Outbound Call - VM')],
       REPS_CR,
     )
-    expect(result.respondedCount).toBe(0)
+    expect(result.connectedCount).toBe(0)
   })
 
   it('counts the contact once the emailed prospect replies', () => {
     // The workflow this metric exists for: the outbound touch alone is not
     // a win; logging the reply later is what converts it.
-    const result = computeContactResponseRate(
+    const result = computeConnectionRate(
       [owned('c1')],
       [act('c1', 'Email'), act('c1', 'Email Reply Received')],
       REPS_CR,
     )
-    expect(result).toEqual({ respondedCount: 1, totalCount: 1, rate: 1 })
+    expect(result).toEqual({ connectedCount: 1, totalCount: 1, rate: 1 })
   })
 
   it('counts the contact once a voicemail is returned', () => {
-    const result = computeContactResponseRate(
+    const result = computeConnectionRate(
       [owned('c1')],
       [act('c1', 'Outbound Call - VM'), act('c1', 'Voicemail Returned')],
       REPS_CR,
     )
-    expect(result.respondedCount).toBe(1)
+    expect(result.connectedCount).toBe(1)
   })
 
   it('counts a contact only once no matter how many qualifying replies it has', () => {
-    const result = computeContactResponseRate(
+    const result = computeConnectionRate(
       [owned('c1')],
       [
         act('c1', 'Inbound Call'),
@@ -235,45 +244,45 @@ describe('computeContactResponseRate', () => {
       ],
       REPS_CR,
     )
-    expect(result).toEqual({ respondedCount: 1, totalCount: 1, rate: 1 })
+    expect(result).toEqual({ connectedCount: 1, totalCount: 1, rate: 1 })
   })
 
   it('does not count in-person activity types, which are out of scope for this build', () => {
-    const result = computeContactResponseRate(
+    const result = computeConnectionRate(
       [owned('c1')],
       [act('c1', 'Onsite Appointment')],
       REPS_CR,
     )
-    expect(result.respondedCount).toBe(0)
+    expect(result.connectedCount).toBe(0)
   })
 
   it('ignores activity for a contact that is not in the contact set', () => {
-    // A stale/orphaned activity must never push respondedCount above
+    // A stale/orphaned activity must never push connectedCount above
     // totalCount, which would render as a rate over 100%.
-    const result = computeContactResponseRate(
+    const result = computeConnectionRate(
       [owned('c1')],
       [act('c1', 'Inbound Call'), act('ghost', 'Inbound Call')],
       REPS_CR,
     )
-    expect(result).toEqual({ respondedCount: 1, totalCount: 1, rate: 1 })
+    expect(result).toEqual({ connectedCount: 1, totalCount: 1, rate: 1 })
   })
 
   it('excludes contacts owned by someone outside the rep directory', () => {
-    const result = computeContactResponseRate(
+    const result = computeConnectionRate(
       [owned('c1', 'rep-a'), owned('c2', 'not-a-listed-rep')],
       [act('c1', 'Inbound Call')],
       REPS_CR,
     )
-    expect(result).toEqual({ respondedCount: 1, totalCount: 1, rate: 1 })
+    expect(result).toEqual({ connectedCount: 1, totalCount: 1, rate: 1 })
   })
 
   it('counts contacts across every rep in the directory, not just one', () => {
-    const result = computeContactResponseRate(
+    const result = computeConnectionRate(
       [owned('c1', 'rep-a'), owned('c2', 'rep-b'), owned('c3', 'rep-b')],
       [act('c2', 'Inbound Call')],
       REPS_CR,
     )
-    expect(result).toEqual({ respondedCount: 1, totalCount: 3, rate: 1 / 3 })
+    expect(result).toEqual({ connectedCount: 1, totalCount: 3, rate: 1 / 3 })
   })
 })
 

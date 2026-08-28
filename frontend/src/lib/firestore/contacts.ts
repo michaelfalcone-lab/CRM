@@ -32,7 +32,7 @@ import {
   writeBatch,
   type QueryConstraint,
 } from 'firebase/firestore'
-import type { ActivityType, Contact, LastContactMode } from 'shared'
+import type { ActivityType, Contact, FirestoreTimestamp, LastContactMode } from 'shared'
 import { db } from '../firebase'
 import type { WithId } from '../firestoreTypes'
 import { advanceStatusOnActivity } from '../statusWorkflow'
@@ -337,6 +337,63 @@ export async function logContact(
   }
   if (context.note) activityPayload.note = context.note.trim()
   batch.set(doc(collection(db, 'activities')), activityPayload)
+
+  await batch.commit()
+}
+
+/** The minimal shape `deleteActivity` needs from the activities that will
+ * remain after the deletion — narrower than `WithId<Activity>` so callers
+ * can pass their already-fetched list and tests can build one trivially. */
+export interface RemainingActivity {
+  type: ActivityType
+  occurredAt: FirestoreTimestamp
+}
+
+/**
+ * Removes one entry from a contact's log — the correction path for an
+ * action recorded by mistake (wrong contact, wrong type, duplicate click).
+ *
+ * Deletes the `activities/{activityId}` doc and rewrites the contact's
+ * `lastContactDate`/`lastContactMode` from `remaining` in a single
+ * `writeBatch`, so the profile's "Last contact" line can never outlive the
+ * entry it was derived from. `remaining` is the caller's already-loaded
+ * activity list minus the one being deleted — passed in rather than
+ * re-queried here because the panel doing the deleting is already
+ * subscribed to exactly that list.
+ *
+ * Three cases:
+ *   - `remaining` empty  -> both fields are deleted, returning the contact
+ *     to the never-contacted state (NOT set to epoch/empty string, which
+ *     would render as a real date of "1970").
+ *   - otherwise -> both recomputed from the newest remaining entry by
+ *     `occurredAt`. Deleting anything other than the newest therefore
+ *     recomputes to the values already stored, which is a harmless no-op
+ *     rather than a special case to detect.
+ *
+ * Contact `status` is deliberately NOT reverted. Status advancement is
+ * monotonic and lossy — `advanceStatusOnActivity` records that a contact
+ * *reached* Warm, not which activity took it there, so there is nothing to
+ * roll back to. A rep who needs to correct it uses the status control on
+ * the contact profile.
+ */
+export async function deleteActivity(
+  activityId: string,
+  contactId: string,
+  remaining: RemainingActivity[],
+): Promise<void> {
+  const batch = writeBatch(db)
+  batch.delete(doc(db, 'activities', activityId))
+
+  const newest = remaining.reduce<RemainingActivity | undefined>(
+    (latest, a) => (!latest || a.occurredAt.seconds > latest.occurredAt.seconds ? a : latest),
+    undefined,
+  )
+
+  batch.update(doc(db, 'contacts', contactId), {
+    lastContactDate: newest ? Timestamp.fromMillis(newest.occurredAt.seconds * 1000) : deleteField(),
+    lastContactMode: newest ? ACTIVITY_TYPE_TO_LAST_CONTACT_MODE[newest.type] : deleteField(),
+    updatedAt: serverTimestamp(),
+  })
 
   await batch.commit()
 }

@@ -52,8 +52,8 @@ vi.mock('./TotalOutputChart', () => ({
 vi.mock('./PipelineChart', () => ({
   PipelineChart: () => <div data-testid="pipeline-chart" />,
 }))
-vi.mock('./WinRateGauge', () => ({
-  WinRateGauge: () => <div data-testid="win-rate-gauge" />,
+vi.mock('./ConnectionRateGauge', () => ({
+  ConnectionRateGauge: () => <div data-testid="win-rate-gauge" />,
 }))
 vi.mock('./ConversionResultsTable', () => ({
   ConversionResultsTable: () => <div data-testid="conversion-results-table" />,

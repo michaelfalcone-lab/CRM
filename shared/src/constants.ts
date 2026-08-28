@@ -3,7 +3,7 @@
  * Kept here (rather than duplicated as a literal in each workspace) so the
  * two sides of a callable's error contract can't silently drift apart.
  */
-import type { ActivityType, LastContactMode, LostReason } from './types'
+import type { ActivityType, LastContactMode, LostReason, ProductType } from './types'
 
 /**
  * The `HttpsError.details.reason` value the `linkAccount` callable
@@ -78,7 +78,7 @@ export const LOST_REASONS: readonly LostReason[] = [
  * it) because it's now a genuine cross-cutting business rule, not just a
  * reporting concept: `frontend/src/lib/statusWorkflow.ts` uses it to decide
  * when a contact advances from Active to Warm, and the dashboard's
- * `aggregations.ts` uses it for the Win Rate widget — a `lib/` module
+ * `aggregations.ts` uses it for the Connection Rate widget — a `lib/` module
  * can't import from a `features/` module (this codebase's layering only
  * goes the other way), so this had to move up to `shared` for both to use
  * it without either duplicating it or drifting apart.
@@ -98,3 +98,28 @@ export const WIN_ACTIVITY_TYPES: readonly ActivityType[] = [
   'Voicemail Returned',
   'Email Reply Received',
 ]
+
+/**
+ * The ticket products an opportunity can be for, in dropdown order
+ * (broadest commitment first, so the highest-value option leads).
+ *
+ * Typed `readonly ProductType[]` so adding a value here without extending
+ * the union — or vice versa — is a compile error rather than a dropdown
+ * that silently writes an unrecognized string.
+ */
+export const PRODUCT_TYPES: readonly ProductType[] = [
+  'Season Tickets',
+  'Mini Plans',
+  'Individual Ticket',
+]
+
+/**
+ * The seasons an opportunity can be created against, in dropdown order.
+ *
+ * A hardcoded list rather than a derived range: a rep should not be able
+ * to log a pursuit for a season the department isn't selling yet, and
+ * "which years are open" is a business decision that changes on its own
+ * schedule, not on January 1st. Extend it when the next season opens —
+ * existing documents keep whatever year they were created with.
+ */
+export const OPPORTUNITY_YEARS: readonly string[] = ['2026', '2027']

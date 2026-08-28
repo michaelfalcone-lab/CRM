@@ -62,6 +62,72 @@ function CategoryTick({
   )
 }
 
+/** Labels longer than this get a slightly smaller tooltip row so the two
+ * multi-word buckets ("Initial Outreach", "Follow-Ups") sit on one line
+ * beside their value instead of wrapping or widening the tooltip. */
+const LONG_LABEL_CHARS = 10
+
+/**
+ * The tooltip's rows, rendered here rather than through Recharts' default
+ * tooltip for two reasons:
+ *
+ *   1. The `<Bar>`s below set no `name`, so the default tooltip labels
+ *      every row with the raw `dataKey` — "initialOutreach", "followUps".
+ *      These are read by a manager, so they need the same display labels
+ *      the `<Legend>` already shows, looked up from the same
+ *      `OUTPUT_BUCKETS` map so the two can never disagree.
+ *   2. The default tooltip's `itemStyle` applies uniformly to every row,
+ *      and Recharts types a formatter's returned name as `string | number`
+ *      — so there is no hook for making only the two long labels smaller.
+ *
+ * Values are rounded because the last stacked bucket carries `ZERO_FLOOR`
+ * (see above) — a rep with no follow-ups must read "0", not "0.0001".
+ */
+function TooltipContent({
+  active,
+  payload,
+  label,
+}: {
+  active?: boolean
+  payload?: { dataKey?: string | number; value?: unknown; color?: string }[]
+  label?: string
+}) {
+  if (!active || !payload?.length) return null
+  return (
+    <div
+      style={{
+        background: VIZ_TOOLTIP_BG,
+        border: `1px solid ${VIZ_TOOLTIP_BORDER}`,
+        borderRadius: 'var(--radius-sm)',
+        padding: '8px 10px',
+        color: VIZ_TOOLTIP_TEXT,
+      }}
+    >
+      <div style={{ fontWeight: 700, marginBottom: 4 }}>{label}</div>
+      {payload.map((entry) => {
+        const bucket = OUTPUT_BUCKETS.find((b) => b.key === entry.dataKey)
+        const name = bucket?.label ?? String(entry.dataKey ?? '')
+        const value = typeof entry.value === 'number' ? Math.round(entry.value) : entry.value
+        return (
+          <div
+            key={String(entry.dataKey)}
+            style={{
+              display: 'flex',
+              justifyContent: 'space-between',
+              gap: 12,
+              fontSize: name.length > LONG_LABEL_CHARS ? 11 : 12,
+              lineHeight: 1.6,
+            }}
+          >
+            <span style={{ color: bucket?.color ?? entry.color }}>{name}</span>
+            <span>{String(value)}</span>
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
 /** The single anchor key both the zero-floor and the `<LabelList>`
  * placement below key off — see `labelAnchor.ts`'s doc comment for why
  * this MUST be the one place that decision is made, not recomputed
@@ -70,7 +136,7 @@ const LABEL_ANCHOR_KEY = labelAnchorKey(OUTPUT_BUCKETS.map((bucket) => bucket.ke
 
 /** Total Output — one horizontal stacked bar per rep plus a Team Total
  * row, bucketed Initial Outreach / Calls / Emails / Meetings /
- * Follow-ups (see `computeTotalOutput`'s doc comment for the exact
+ * Follow-Ups (see `computeTotalOutput`'s doc comment for the exact
  * sequence-then-method bucketing rule).
  *
  * Every `<Bar>` sets `isAnimationActive={false}` — found during this
@@ -88,12 +154,12 @@ const LABEL_ANCHOR_KEY = labelAnchorKey(OUTPUT_BUCKETS.map((bucket) => bucket.ke
  * segment needs a non-brown background to be visible at all.
  *
  * The "labeled with its total at the end" requirement is carried by
- * `<LabelList>` on the anchor bucket's `<Bar>` (currently Follow-ups,
+ * `<LabelList>` on the anchor bucket's `<Bar>` (currently Follow-Ups,
  * per `LABEL_ANCHOR_KEY`), reading `total` instead of that bucket's own
  * value — but found during manual verification that Recharts skips
  * rendering a `LabelList` entry entirely when the bar segment it's
  * attached to has value exactly 0 (no geometry to anchor to), which
- * silently dropped a rep's total label whenever their Follow-ups count
+ * silently dropped a rep's total label whenever their Follow-Ups count
  * happened to be zero — an extremely common case, not a rare edge case,
  * and exactly the "zero-activity rep" case the brief calls out. Fixed by
  * flooring ONLY the anchor bucket's fed-in value at `ZERO_FLOOR` (never
@@ -133,12 +199,7 @@ export function TotalOutputChart({ rows, teamTotal }: TotalOutputChartProps) {
               axisLine={{ stroke: VIZ_GRID_LINE }}
               tickLine={false}
             />
-            <Tooltip
-              formatter={(value, name) => [typeof value === 'number' ? Math.round(value) : value, name]}
-              contentStyle={{ background: VIZ_TOOLTIP_BG, border: `1px solid ${VIZ_TOOLTIP_BORDER}` }}
-              labelStyle={{ color: VIZ_TOOLTIP_TEXT, fontWeight: 700 }}
-              itemStyle={{ color: VIZ_TOOLTIP_TEXT }}
-            />
+            <Tooltip content={<TooltipContent />} />
             <Legend
               formatter={(value) => OUTPUT_BUCKETS.find((b) => b.key === value)?.label ?? value}
               wrapperStyle={{ color: VIZ_AXIS_TEXT, fontSize: 12 }}

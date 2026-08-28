@@ -98,7 +98,13 @@ service cloud.firestore {
       allow read: if isActiveUser();
       allow create: if isActiveUser() && (isAdmin() || request.resource.data.ownerId == callerUid());
       allow update: if isAdmin() || (ownsRecord() && ownerUnchanged());
-      allow delete: if isAdmin();
+      // Wider than every other collection's admin-only delete, on purpose:
+      // a mislogged activity (wrong contact, wrong type, a double-click)
+      // is the rep's own data-entry error, and leaving it there skews both
+      // the contact's history and that rep's dashboard counts permanently.
+      // Deleting one is a correction, not an administrative act — so the
+      // owning rep may remove their own, and only their own.
+      allow delete: if isAdmin() || ownsRecord();
     }
 
     match /importBatches/{batchId} {

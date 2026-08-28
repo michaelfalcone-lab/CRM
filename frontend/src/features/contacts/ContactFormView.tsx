@@ -7,7 +7,7 @@ import { ACTIVITY_TYPES, type ActivityType } from 'shared'
 import { Button, Card, Select, TextField } from '../../components/ui'
 import { useCurrentUser } from '../../app/AuthProvider'
 import { capitalizeFirstLetter } from '../../lib/capitalizeFirstLetter'
-import { formatPhoneInput, isValidPhoneDigitCount, phoneDigitCount, PHONE_DEFAULT_PREFIX, PHONE_PLACEHOLDER } from '../../lib/phoneFormat'
+import { formatPhoneInput, isValidPhoneDigitCount, phoneDigitCount, PHONE_PLACEHOLDER } from '../../lib/phoneFormat'
 import {
   ACTIVITY_TYPE_TO_LAST_CONTACT_MODE,
   createContact,
@@ -42,8 +42,8 @@ const schema = z
     ownerId: z.string().min(1, 'Choose an owner'),
   })
   // Email and Phone are each individually optional, but at least one is
-  // required — a "complete" phone specifically (10 digits), not a bare
-  // accepted 401 default, which must not count as "phone provided."
+  // required — a "complete" phone specifically (10 digits), not a partial
+  // entry like a lone area code, which must not count as "phone provided."
   .refine((data) => Boolean(data.email) || phoneDigitCount(data.phone) === 10, {
     message: 'Enter an email or phone number',
     path: ['email'],
@@ -77,12 +77,6 @@ export function ContactFormView() {
 
   const [org, setOrg] = useState<OrganizationComboboxValue | null>(null)
   const [submitError, setSubmitError] = useState<string | null>(null)
-  // Tracks whether the phone field has received any keystroke yet, so
-  // blur can tell "tabbed through empty" (commit the 401 default) apart
-  // from "typed something, then deleted it all" (leave it genuinely
-  // empty — the user explicitly overrode the default, they don't get it
-  // back by clearing what they typed).
-  const [phoneTouched, setPhoneTouched] = useState(false)
 
   const {
     register,
@@ -262,19 +256,8 @@ export function ContactFormView() {
             error={errors.phone?.message}
             {...phoneField}
             onChange={(e) => {
-              setPhoneTouched(true)
               e.target.value = formatPhoneInput(e.target.value)
               phoneField.onChange(e)
-            }}
-            onBlur={(e) => {
-              // Tabbed/clicked away with nothing typed: the 401 default
-              // becomes the real, committed value. Typed-then-deleted
-              // (phoneTouched already true) does NOT get this — the rep
-              // explicitly overrode the default already.
-              if (!phoneTouched && e.target.value === '') {
-                setValue('phone', PHONE_DEFAULT_PREFIX)
-              }
-              phoneField.onBlur(e)
             }}
           />
         </div>

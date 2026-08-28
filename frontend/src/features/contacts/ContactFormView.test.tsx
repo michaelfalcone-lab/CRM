@@ -115,16 +115,16 @@ describe('ContactFormView phone field', () => {
     expect(screen.getByLabelText('Phone')).toHaveValue('401-555-1234')
   })
 
-  it('commits the 401 default when the user tabs away having typed nothing', async () => {
+  it('stays empty when the user tabs through having typed nothing', async () => {
     const user = userEvent.setup()
     renderForm()
     const phone = screen.getByLabelText('Phone')
     phone.focus()
     await user.tab()
-    expect(phone).toHaveValue('401-')
+    expect(phone).toHaveValue('')
   })
 
-  it('does not assume 401 when the user starts typing immediately', async () => {
+  it('does not assume a 401 area code when the user types another', async () => {
     const user = userEvent.setup()
     renderForm()
     await user.type(screen.getByLabelText('Phone'), '5551234567')

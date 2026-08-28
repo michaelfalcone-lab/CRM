@@ -12,15 +12,19 @@ import {
   TableHead,
   TableHeaderCell,
   TableRow,
+  TextArea,
 } from '../../components/ui'
 import { useCurrentUser } from '../../app/AuthProvider'
 import {
   canEditRecord,
   logContact,
+  nextStatusInCycle,
   ownerLabel,
   parseLocalDateInput,
   toBadgeColor,
   todayLocalDateInput,
+  updateContact,
+  useActivityCountsByContact,
   useContacts,
   useOwnerDirectory,
   useStatuses,
@@ -28,39 +32,77 @@ import {
 import type { WithId } from '../../lib/firestoreTypes'
 import styles from './ContactListView.module.css'
 
-function formatDate(ts: FirestoreTimestamp | undefined): string {
-  if (!ts) return '—'
-  return new Date(ts.seconds * 1000).toLocaleDateString()
+const SECONDS_PER_DAY = 86_400
+
+/** Whole days between `ts` and now, or `null` for a contact nobody has
+ * ever reached. Floored, so "today" is 0 rather than a fraction, and
+ * clamped at 0 — a `lastContactDate` in the future (a rep logging a
+ * meeting they've already scheduled) reads as "Today", never as a
+ * negative number of days. */
+export function daysSince(ts: FirestoreTimestamp | undefined, now: number = Date.now()): number | null {
+  if (!ts) return null
+  return Math.max(0, Math.floor((now / 1000 - ts.seconds) / SECONDS_PER_DAY))
 }
 
-/** Sorts contacts by `lastContactDate` ascending, with a never-contacted
- * contact (no `lastContactDate` at all) treated as the oldest possible
- * value so it sorts first alongside genuinely stale contacts — this is
- * the list's default sort ("oldest/never-contacted first") so duplicate
- * outreach onto a recently-touched contact is visible at a glance, and a
- * contact nobody has ever reached surfaces at the very top rather than
- * being buried wherever `orderBy('lastName')` happened to place it.
+/** The days-since value as the column shows it. A never-contacted
+ * contact reads "Never" rather than a dash — the distinction between
+ * "we have no date" and "it has been N days" is the whole point of the
+ * column, so it gets a word, not a placeholder glyph. */
+function formatDaysSince(ts: FirestoreTimestamp | undefined): string {
+  const days = daysSince(ts)
+  if (days === null) return 'Never'
+  if (days === 0) return 'Today'
+  return `${days} ${days === 1 ? 'day' : 'days'}`
+}
+
+/** The sort value for the Days Since Last Contact column: the raw
+ * `lastContactDate` seconds, with a never-contacted contact treated as
+ * the oldest possible value so it sorts alongside genuinely stale
+ * contacts rather than being dropped to the bottom as "missing". Ascending
+ * by this is oldest/never-contacted first — i.e. most-overdue first, which
+ * is what a rep scanning for who to call next wants.
+ *
+ * The sentinel is finite deliberately: comparators here subtract, and
+ * `-Infinity - -Infinity` is `NaN`, which is not a valid comparator
+ * result — two never-contacted contacts would compare as neither equal
+ * nor ordered, and the sort's behaviour becomes engine-defined. */
+const NEVER_CONTACTED = Number.MIN_SAFE_INTEGER
+
+function lastContactSeconds(contact: WithId<Contact>): number {
+  return contact.lastContactDate ? contact.lastContactDate.seconds : NEVER_CONTACTED
+}
+
+/** Sorts contacts oldest/never-contacted first, so duplicate outreach
+ * onto a recently-touched contact is visible at a glance and a contact
+ * nobody has ever reached surfaces at the top. No longer the list's
+ * default (that is now name A–Z — see `ContactListView`), but kept as the
+ * ordering behind the Days Since Last Contact column's ascending sort.
  * Exported (not just used inline) so it's directly unit-testable. */
 export function sortByLastContactedFirst(contacts: WithId<Contact>[]): WithId<Contact>[] {
-  return [...contacts].sort((a, b) => {
-    const aMillis = a.lastContactDate ? a.lastContactDate.seconds : -Infinity
-    const bMillis = b.lastContactDate ? b.lastContactDate.seconds : -Infinity
-    return aMillis - bMillis
-  })
+  return [...contacts].sort((a, b) => lastContactSeconds(a) - lastContactSeconds(b))
 }
 
-/** The column keys a header click can sort by. Contact Date / Contact
- * Method are deliberately absent — they stay display-only. */
-export type SortKey = 'name' | 'organization' | 'status' | 'owner'
+/** The column keys a header click can sort by. Contact Method is
+ * deliberately absent — it stays display-only. */
+export type SortKey = 'name' | 'organization' | 'status' | 'owner' | 'lastContact' | 'timesContacted'
 export type SortDirection = 'asc' | 'desc'
 
-/** The sortable header columns, in display order. */
+/** The sortable header columns, in display order — they occupy the first
+ * six columns, ahead of the display-only Contact Method and the Action
+ * button. Ascending on either activity column is the "needs attention"
+ * direction: longest since last contact first, fewest touches first. */
 const SORTABLE_COLUMNS: { key: SortKey; label: string }[] = [
   { key: 'name', label: 'Name' },
   { key: 'organization', label: 'Organization' },
   { key: 'status', label: 'Status' },
   { key: 'owner', label: 'Owner' },
+  { key: 'lastContact', label: 'Days Since Last Contact' },
+  { key: 'timesContacted', label: 'Times Contacted' },
 ]
+
+/** Total column count (the sortable block plus Contact Method and
+ * Action), for the inline Add Action row's `colSpan`. */
+const COLUMN_COUNT = SORTABLE_COLUMNS.length + 2
 
 /** The value a given contact sorts by for `key`, or `null` when the field
  * is genuinely absent (no organization, no status). `null` is handled
@@ -77,14 +119,40 @@ function sortValue(contact: WithId<Contact>, key: SortKey): string | null {
       return contact.status ? contact.status.toLowerCase() : null
     case 'owner':
       return contact.ownerId.toLowerCase()
+    // Handled by `numericSortValue` — never reached.
+    case 'lastContact':
+    case 'timesContacted':
+      return null
   }
 }
 
+/** The two numeric columns sort on real numbers, not the string compare
+ * below: `localeCompare` would order 10 before 9. Absent values are NOT
+ * sunk here the way absent strings are — "never contacted" and "zero
+ * touches" are meaningful extremes of these scales, not missing data, so
+ * they sort at the overdue end where a rep needs to see them. */
+function numericSortValue(
+  contact: WithId<Contact>,
+  key: 'lastContact' | 'timesContacted',
+  counts: Map<string, number>,
+): number {
+  return key === 'lastContact' ? lastContactSeconds(contact) : (counts.get(contact.id) ?? 0)
+}
+
+function isNumericKey(key: SortKey): key is 'lastContact' | 'timesContacted' {
+  return key === 'lastContact' || key === 'timesContacted'
+}
+
 /**
- * Sorts by a clicked column header. Contacts missing the sorted field
- * (no organization, no status) always sink to the bottom, in BOTH
+ * Sorts by a clicked column header. Contacts missing the sorted TEXT
+ * field (no organization, no status) always sink to the bottom, in BOTH
  * directions — reversing the sort shouldn't promote "nothing" to the top
- * of the list.
+ * of the list. The numeric columns work differently; see
+ * `numericSortValue`.
+ *
+ * `counts` supplies the Times Contacted column's values (keyed by contact
+ * id) and is ignored by every other key — it is passed in rather than
+ * read here so this stays a pure function of its arguments.
  *
  * Pure and exported so the ordering rules are unit-testable without
  * rendering the table; the component only owns which key/direction is
@@ -95,8 +163,14 @@ export function sortContacts(
   contacts: WithId<Contact>[],
   key: SortKey,
   direction: SortDirection,
+  counts: Map<string, number> = new Map(),
 ): WithId<Contact>[] {
   const factor = direction === 'asc' ? 1 : -1
+  if (isNumericKey(key)) {
+    return [...contacts].sort(
+      (a, b) => (numericSortValue(a, key, counts) - numericSortValue(b, key, counts)) * factor,
+    )
+  }
   return [...contacts].sort((a, b) => {
     const aValue = sortValue(a, key)
     const bValue = sortValue(b, key)
@@ -107,12 +181,16 @@ export function sortContacts(
   })
 }
 
-/** Contacts list: table of name/organization/status/owner/last-contact,
- * with status + owner filters and a "My Contacts" quick filter. Default
- * sort is oldest/never-contacted first (`sortByLastContactedFirst`,
- * applied client-side over whatever `useContacts` already fetched), so
- * duplicate outreach onto a recently-touched contact is visible at a
- * glance (Task 8b). */
+/** Contacts list: table of name/organization/status/owner, days since
+ * last contact, times contacted and contact method, with status + owner
+ * filters and a "My Contacts" quick filter.
+ *
+ * Names render "Last, First" and the default sort is that same key
+ * ascending — i.e. alphabetical by last name, so the list reads like a
+ * directory and a specific person can be found by scanning. The earlier
+ * default was oldest/never-contacted first (Task 8b, to expose duplicate
+ * outreach); that ordering is still one click away on the Days Since Last
+ * Contact column, which now sorts. */
 export function ContactListView() {
   const navigate = useNavigate()
   const { user } = useCurrentUser()
@@ -123,9 +201,14 @@ export function ContactListView() {
   const [statusFilter, setStatusFilter] = useState('')
   const [ownerFilter, setOwnerFilter] = useState('')
   const [mineOnly, setMineOnly] = useState(false)
-  /** `null` = no header clicked yet, so the default oldest/never-contacted
-   * sort still applies. */
-  const [sort, setSort] = useState<{ key: SortKey; direction: SortDirection } | null>(null)
+  /** Starts on the default sort rather than `null` so the Name header
+   * shows its active arrow and `aria-sort` from first paint — the list IS
+   * sorted by name on load, and a header that claimed otherwise would be
+   * lying to both sighted users and screen readers. */
+  const [sort, setSort] = useState<{ key: SortKey; direction: SortDirection }>({
+    key: 'name',
+    direction: 'asc',
+  })
   /** The contact id whose inline Add Action form is open, or `null`. Only
    * one row expands at a time — the form's date/type state is shared
    * rather than per-row, which is why opening a second row would silently
@@ -133,8 +216,12 @@ export function ContactListView() {
   const [actionFor, setActionFor] = useState<string | null>(null)
   const [actionDate, setActionDate] = useState(() => todayLocalDateInput())
   const [actionType, setActionType] = useState<ActivityType>('Outbound Call - Talked To')
+  const [actionNote, setActionNote] = useState('')
   const [actionSubmitting, setActionSubmitting] = useState(false)
   const [actionError, setActionError] = useState<string | null>(null)
+  /** The contact id whose status write is in flight, or `null` — so only
+   * the clicked badge disables, not every badge in the table. */
+  const [statusSaving, setStatusSaving] = useState<string | null>(null)
 
   const effectiveOwnerId = mineOnly ? user?.authUid ?? undefined : ownerFilter || undefined
 
@@ -142,17 +229,43 @@ export function ContactListView() {
     status: statusFilter || undefined,
     ownerId: effectiveOwnerId,
   })
+  const { counts: contactCounts } = useActivityCountsByContact()
   const sortedContacts = useMemo(
-    () => (sort ? sortContacts(contacts, sort.key, sort.direction) : sortByLastContactedFirst(contacts)),
-    [contacts, sort],
+    () => sortContacts(contacts, sort.key, sort.direction, contactCounts),
+    [contacts, sort, contactCounts],
   )
 
   function toggleSort(key: SortKey) {
     setSort((current) =>
-      current?.key === key
+      current.key === key
         ? { key, direction: current.direction === 'asc' ? 'desc' : 'asc' }
         : { key, direction: 'asc' },
     )
+  }
+
+  /**
+   * Advances `contact` to the next status in the configured cycle — the
+   * manual counterpart to the automated advancement `logContact` applies.
+   * Unlike that one this can move a contact backward and off a terminal
+   * status, which is the point: it's how a rep corrects a status, and the
+   * only way to reach Lost without an opportunity.
+   *
+   * A failure is deliberately silent beyond leaving the badge unchanged:
+   * the write is a single field on a doc the rep owns, the live snapshot
+   * means a successful change is self-evident, and there is no room in a
+   * table cell for an error message. The row is never optimistically
+   * repainted, so a failed click simply doesn't move.
+   */
+  async function handleCycleStatus(contact: WithId<Contact>) {
+    if (statusSaving) return
+    const next = nextStatusInCycle(contact.status, statuses)
+    if (!next || next === contact.status) return
+    setStatusSaving(contact.id)
+    try {
+      await updateContact(contact.id, { status: next })
+    } finally {
+      setStatusSaving(null)
+    }
   }
 
   /** Logs an action against `contact` without leaving the list — the same
@@ -169,9 +282,13 @@ export function ContactListView() {
         organizationId: contact.organizationId,
         ownerId: contact.ownerId,
         createdBy: user.authUid,
+        // `logContact` omits the field entirely when this is falsy, so an
+        // untouched note never writes an empty string onto the activity.
+        note: actionNote || undefined,
         currentStatus: contact.status,
       })
       setActionFor(null)
+      setActionNote('')
     } catch (err) {
       setActionError(err instanceof Error ? err.message : 'Something went wrong. Please try again.')
     } finally {
@@ -236,7 +353,7 @@ export function ContactListView() {
             <TableHead>
               <TableRow>
                 {SORTABLE_COLUMNS.map(({ key, label }) => {
-                  const active = sort?.key === key
+                  const active = sort.key === key
                   return (
                     <TableHeaderCell
                       key={key}
@@ -257,7 +374,6 @@ export function ContactListView() {
                     </TableHeaderCell>
                   )
                 })}
-                <TableHeaderCell>Contact Date</TableHeaderCell>
                 <TableHeaderCell>Contact Method</TableHeaderCell>
                 <TableHeaderCell>Action</TableHeaderCell>
               </TableRow>
@@ -269,8 +385,11 @@ export function ContactListView() {
                   <Fragment key={contact.id}>
                   <TableRow>
                     <TableCell>
+                      {/* "Last, First" so a column sorted by last name
+                          reads in the order it is sorted — scanning for a
+                          surname means scanning the start of each line. */}
                       <Link to={`/contacts/${contact.id}`}>
-                        {contact.firstName} {contact.lastName}
+                        {contact.lastName}, {contact.firstName}
                       </Link>
                     </TableCell>
                     <TableCell>
@@ -283,7 +402,19 @@ export function ContactListView() {
                       )}
                     </TableCell>
                     <TableCell>
-                      {contact.status ? (
+                      {canEditRecord(user, contact) ? (
+                        <button
+                          type="button"
+                          className={styles.statusButton}
+                          disabled={statusSaving === contact.id}
+                          title="Click to advance this contact's status"
+                          onClick={() => void handleCycleStatus(contact)}
+                        >
+                          <Badge color={toBadgeColor(status?.color)}>
+                            {status?.label ?? contact.status ?? 'No status'}
+                          </Badge>
+                        </button>
+                      ) : contact.status ? (
                         <Badge color={toBadgeColor(status?.color)}>
                           {status?.label ?? contact.status}
                         </Badge>
@@ -292,13 +423,21 @@ export function ContactListView() {
                       )}
                     </TableCell>
                     <TableCell>{ownerLabel(contact.ownerId, owners, user?.authUid ?? undefined)}</TableCell>
-                    <TableCell>{formatDate(contact.lastContactDate)}</TableCell>
+                    <TableCell>{formatDaysSince(contact.lastContactDate)}</TableCell>
+                    <TableCell>{contactCounts.get(contact.id) ?? 0}</TableCell>
                     <TableCell>{contact.lastContactMode ?? '—'}</TableCell>
                     <TableCell>
                       {canEditRecord(user, contact) && (
                         <Button
                           variant="secondary"
-                          onClick={() => setActionFor(contact.id)}
+                          onClick={() => {
+                            // Clear any note typed against a previously
+                            // opened row — the form's state is shared
+                            // across rows (see `actionFor`'s comment), so
+                            // without this the next contact inherits it.
+                            setActionNote('')
+                            setActionFor(contact.id)
+                          }}
                           disabled={actionFor === contact.id}
                         >
                           Add Action
@@ -311,7 +450,7 @@ export function ContactListView() {
                       {/* Spans the full table so the inline form reads as
                           belonging to the row above it, rather than being
                           squeezed into the Action column's width. */}
-                      <TableCell colSpan={SORTABLE_COLUMNS.length + 3}>
+                      <TableCell colSpan={COLUMN_COUNT}>
                         <div className={styles.actionForm}>
                           <input
                             type="date"
@@ -327,6 +466,14 @@ export function ContactListView() {
                             value={actionType}
                             onChange={(e) => setActionType(e.target.value as ActivityType)}
                           />
+                          <TextArea
+                            id={`action-note-${contact.id}`}
+                            name="actionNote"
+                            label="Note (optional)"
+                            rows={2}
+                            value={actionNote}
+                            onChange={(e) => setActionNote(e.target.value)}
+                          />
                           <Button
                             variant="primary"
                             disabled={actionSubmitting}
@@ -337,7 +484,10 @@ export function ContactListView() {
                           <Button
                             variant="ghost"
                             disabled={actionSubmitting}
-                            onClick={() => setActionFor(null)}
+                            onClick={() => {
+                              setActionFor(null)
+                              setActionNote('')
+                            }}
                           >
                             Cancel
                           </Button>

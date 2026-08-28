@@ -73,3 +73,20 @@
   border: 1px solid var(--gray-300);
   border-radius: var(--radius-sm);
 }
+
+/* An unstyled button wrapper so the status Badge stays visually identical
+   to the read-only one while being a real, keyboard-reachable control —
+   clicking it advances the contact through the status cycle. */
+.statusButton {
+  background: none;
+  border: none;
+  padding: 0;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+}
+
+.statusButton:disabled {
+  cursor: default;
+  opacity: 0.6;
+}

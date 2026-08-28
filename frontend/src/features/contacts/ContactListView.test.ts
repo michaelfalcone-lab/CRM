@@ -1,13 +1,17 @@
 /**
- * Unit test for `sortByLastContactedFirst` — the Task 8b default sort
- * ("oldest/never-contacted first") so a rep's list surfaces duplicate-
- * outreach risk (a contact touched again and again while others go
- * untouched) without needing to sort manually.
+ * Unit tests for the contacts list's ordering rules and its days-since
+ * derivation.
+ *
+ * `sortByLastContactedFirst` ("oldest/never-contacted first") surfaces
+ * duplicate-outreach risk — a contact touched again and again while
+ * others go untouched. It is no longer the list's default (that is now
+ * name A–Z) but is the ordering behind the Days Since Last Contact
+ * column's ascending sort.
  */
 import { describe, expect, it } from 'vitest'
 import type { Contact } from 'shared'
 import type { WithId } from '../../lib/firestoreTypes'
-import { sortContacts, sortByLastContactedFirst } from './ContactListView'
+import { daysSince, sortContacts, sortByLastContactedFirst } from './ContactListView'
 
 function contact(
   id: string,
@@ -134,5 +138,113 @@ describe('sortContacts', () => {
 
   it('handles an empty list', () => {
     expect(sortContacts([], 'name', 'asc')).toEqual([])
+  })
+
+  describe('lastContact (Days Since Last Contact)', () => {
+    it('sorts most-overdue first ascending, with never-contacted at the top', () => {
+      const recent = contact('recent', 3000)
+      const stale = contact('stale', 1000)
+      const never = contact('never')
+
+      expect(sortContacts([recent, stale, never], 'lastContact', 'asc').map((c) => c.id)).toEqual([
+        'never',
+        'stale',
+        'recent',
+      ])
+    })
+
+    it('reverses on descending, sinking never-contacted to the bottom', () => {
+      const recent = contact('recent', 3000)
+      const stale = contact('stale', 1000)
+      const never = contact('never')
+
+      expect(sortContacts([stale, never, recent], 'lastContact', 'desc').map((c) => c.id)).toEqual([
+        'recent',
+        'stale',
+        'never',
+      ])
+    })
+
+    // Two never-contacted contacts both map to the same sentinel. It has
+    // to be a finite one: `-Infinity - -Infinity` is NaN, which is not a
+    // valid comparator result and leaves the ordering engine-defined.
+    it('orders several never-contacted contacts without producing a NaN comparison', () => {
+      const never1 = contact('never1')
+      const never2 = contact('never2')
+      const dated = contact('dated', 500)
+
+      const sorted = sortContacts([dated, never1, never2], 'lastContact', 'asc')
+      expect(sorted.map((c) => c.id).slice(0, 2).sort()).toEqual(['never1', 'never2'])
+      expect(sorted[2]!.id).toBe('dated')
+    })
+  })
+
+  describe('timesContacted', () => {
+    const counts = new Map([
+      ['many', 9],
+      ['few', 2],
+    ])
+
+    it('sorts numerically, not lexicographically', () => {
+      // The point of a numeric compare: as strings, '10' sorts before '9'.
+      const ten = contact('ten', 1)
+      const nine = contact('nine', 2)
+      const numeric = new Map([
+        ['ten', 10],
+        ['nine', 9],
+      ])
+      expect(sortContacts([ten, nine], 'timesContacted', 'asc', numeric).map((c) => c.id)).toEqual([
+        'nine',
+        'ten',
+      ])
+    })
+
+    it('treats a contact absent from the counts map as zero touches', () => {
+      const many = contact('many', 1)
+      const few = contact('few', 2)
+      const untouched = contact('untouched', 3)
+
+      expect(
+        sortContacts([many, few, untouched], 'timesContacted', 'asc', counts).map((c) => c.id),
+      ).toEqual(['untouched', 'few', 'many'])
+    })
+
+    it('reverses on descending', () => {
+      const many = contact('many', 1)
+      const few = contact('few', 2)
+      expect(sortContacts([few, many], 'timesContacted', 'desc', counts).map((c) => c.id)).toEqual([
+        'many',
+        'few',
+      ])
+    })
+  })
+})
+
+describe('daysSince', () => {
+  const now = Date.UTC(2026, 7, 28) // fixed clock, so these never drift
+
+  it('returns null for a contact who has never been contacted', () => {
+    expect(daysSince(undefined, now)).toBeNull()
+  })
+
+  it('returns 0 on the same day', () => {
+    expect(daysSince({ seconds: now / 1000, nanoseconds: 0 }, now)).toBe(0)
+  })
+
+  it('floors a partial day rather than rounding up', () => {
+    const thirtySixHoursAgo = { seconds: now / 1000 - 36 * 3600, nanoseconds: 0 }
+    expect(daysSince(thirtySixHoursAgo, now)).toBe(1)
+  })
+
+  it('counts whole days back', () => {
+    const tenDaysAgo = { seconds: now / 1000 - 10 * 86_400, nanoseconds: 0 }
+    expect(daysSince(tenDaysAgo, now)).toBe(10)
+  })
+
+  // A rep can log a meeting that is already on the calendar for next week.
+  // "-7 days since last contact" is nonsense; it clamps to 0 ("Today").
+  it('clamps a future date to 0 instead of going negative', () => {
+    const nextWeek = { seconds: now / 1000 + 7 * 86_400, nanoseconds: 0 }
+    expect(daysSince(nextWeek, now)).toBe(0)
   })
 })

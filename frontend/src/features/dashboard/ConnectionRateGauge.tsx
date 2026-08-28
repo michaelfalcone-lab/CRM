@@ -1,10 +1,10 @@
-import type { ContactResponseRateResult } from './aggregations'
+import type { ConnectionRateResult } from './aggregations'
 import { DashboardPanel } from './DashboardPanel'
 import { VIZ_AXIS_TEXT, VIZ_CHART_WELL_BG, VIZ_GREEN, VIZ_GRID_LINE, VIZ_MID_GRAY } from './theme'
-import styles from './WinRateGauge.module.css'
+import styles from './ConnectionRateGauge.module.css'
 
-export interface WinRateGaugeProps {
-  result: ContactResponseRateResult
+export interface ConnectionRateGaugeProps {
+  result: ConnectionRateResult
 }
 
 /** Gauge sweep: a 240° arc opening downward, so the needle's rest
@@ -23,6 +23,23 @@ const MINOR_PER_MAJOR = 4
  * rendered on top of the arc. */
 const SIZE = 200
 const CENTER = SIZE / 2
+
+/* The 240° sweep opens downward, so the drawn content (arc, ticks, scale
+ * labels) fills the top of a square viewBox and leaves a dead band at the
+ * bottom — which read as the whole dial being jammed against the top of
+ * its panel, with the "50%" label touching the edge. Shifting the viewBox
+ * origin up slides the content down inside the same square box, centring
+ * it.
+ *
+ * The value is derived, not eyeballed: the ink spans y≈3 (the top of the
+ * "50%" label, at CENTER - R_LABEL - half its font size) to y≈151 (the
+ * bottom of the "0%"/"100%" labels, which sit at CENTER + R_LABEL·sin30°).
+ * That is 148 units of content in a 200-unit box, so centring wants a
+ * 26-unit margin at each end, and the content currently starts at 3 —
+ * hence a 23-unit push. `.center`'s `top` in the stylesheet is offset to
+ * match (the hub lands at (100 + 23) / 200 ≈ 61.5%): the two MUST move
+ * together or the big readout drifts out of the dial's hub. */
+const VIEWBOX_Y_OFFSET = -23
 const R_LABEL = 92
 const R_TICK_OUTER = 80
 const R_TICK_INNER_MAJOR = 68
@@ -45,8 +62,10 @@ function arcPath(fromDeg: number, toDeg: number, radius: number): string {
 }
 
 /**
- * The Win Rate dial: what share of the team's contacts have actually
- * responded to outreach.
+ * The Connection Rate dial: what share of the team's contacts have
+ * actually connected back — answered, replied, or returned a voicemail
+ * (see `WIN_ACTIVITY_TYPES`). Previously labelled "Win Rate"; the metric
+ * is unchanged, the name just says what it measures.
  *
  * Hand-built SVG rather than a Recharts primitive because Recharts has no
  * gauge with tick marks — its radial types draw bare arcs, which is what
@@ -57,10 +76,10 @@ function arcPath(fromDeg: number, toDeg: number, radius: number): string {
  *
  * `rate === null` (no contacts at all) renders the dial with no needle and
  * an explicit "No contacts yet" — never a 0% needle, which would read as
- * "nobody responds" rather than "nothing to measure".
+ * "nobody connects" rather than "nothing to measure".
  */
-export function WinRateGauge({ result }: WinRateGaugeProps) {
-  const { respondedCount, totalCount, rate } = result
+export function ConnectionRateGauge({ result }: ConnectionRateGaugeProps) {
+  const { connectedCount, totalCount, rate } = result
   const hasData = rate !== null
   const valueAngle = START_ANGLE + SWEEP * (rate ?? 0)
 
@@ -72,24 +91,24 @@ export function WinRateGauge({ result }: WinRateGaugeProps) {
     ticks.push({
       angle: START_ANGLE + SWEEP * fraction,
       major,
-      label: major ? `${Math.round(fraction * 100)}` : undefined,
+      label: major ? `${Math.round(fraction * 100)}%` : undefined,
     })
   }
 
   return (
-    <DashboardPanel title="Win Rate" subtitle="Contacts who responded ÷ all contacts">
+    <DashboardPanel title="Connection Rate" subtitle="Contacts who connected ÷ all contacts">
       <div
         className={styles.gaugeWrap}
         style={{ background: VIZ_CHART_WELL_BG, borderRadius: 'var(--radius-sm)' }}
       >
         <svg
-          viewBox={`0 0 ${SIZE} ${SIZE}`}
+          viewBox={`0 ${VIEWBOX_Y_OFFSET} ${SIZE} ${SIZE}`}
           className={styles.dial}
           role="img"
           aria-label={
             hasData
-              ? `Win rate ${Math.round(rate * 100)} percent: ${respondedCount} of ${totalCount} contacts responded`
-              : 'Win rate unavailable: no contacts yet'
+              ? `Connection rate ${Math.round(rate * 100)} percent: ${connectedCount} of ${totalCount} contacts connected`
+              : 'Connection rate unavailable: no contacts yet'
           }
         >
           {/* Track — the full scale, so the filled portion is read as a
@@ -173,7 +192,7 @@ export function WinRateGauge({ result }: WinRateGaugeProps) {
         </div>
       </div>
       <div className={styles.counts}>
-        <span className={styles.respondedCount}>{respondedCount} responded</span>
+        <span className={styles.connectedCount}>{connectedCount} connected</span>
         <span className={styles.totalCount}>{totalCount} contacts</span>
       </div>
     </DashboardPanel>

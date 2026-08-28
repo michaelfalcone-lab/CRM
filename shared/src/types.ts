@@ -35,8 +35,8 @@ export type ActivityType =
   | 'Email'
   /** The prospect emailed back. Logged as its own dated event, separately
    * from the outbound `'Email'` that preceded it — an email sent is an
-   * attempt, a reply is a response, and the Win Rate metric counts only
-   * the latter. See `WIN_ACTIVITY_TYPES` in the dashboard's
+   * attempt, a reply is a response, and the Connection Rate metric counts
+   * only the latter. See `WIN_ACTIVITY_TYPES` in the dashboard's
    * `aggregations.ts`. */
   | 'Email Reply Received'
   | 'Inbound Call'
@@ -61,6 +61,11 @@ export type LostReason =
   | 'Cost'
   | 'Game Times'
   | 'Other'
+
+/** What an opportunity is selling — the ticket product, independent of
+ * which sport it's for. See `PRODUCT_TYPES` for the ordered runtime list
+ * the form's dropdown renders. */
+export type ProductType = 'Season Tickets' | 'Mini Plans' | 'Individual Ticket'
 
 /** Reserved identity-matching fields, shared by Contacts and Organizations,
  * for the future Paciolan sync (unused until phase 6). */
@@ -211,6 +216,19 @@ export interface Opportunity {
   /** Set when the pursuit is at the org/account level. */
   organizationId: string | null
   sport: Sport
+  /** The season this pursuit is for, as a 4-digit year string (see
+   * `OPPORTUNITY_YEARS`). A string rather than a number so it needs no
+   * coercion between the `<select>` value, the stored field, and any
+   * future "2026-27"-style label. Optional on the doc — opportunities
+   * created before this field existed have none — but required by the
+   * form, so anything created from the UI carries it. */
+  year?: string
+  /** What is being sold (see `PRODUCT_TYPES`). Stored as a plain string
+   * rather than the narrower union, on the same reasoning as
+   * `lostReason` below: a retired or renamed product on old data must
+   * never make an existing document invalid. Optional/required on the
+   * same terms as `year`. */
+  productType?: string
   /** References an `opportunityStages` doc. */
   stage: string
   /** Optional single text field — not a subcollection. */

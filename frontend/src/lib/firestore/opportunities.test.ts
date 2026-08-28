@@ -210,6 +210,21 @@ describe('updateOpportunity — wonAt/lostAt transitions', () => {
     expect(patch).not.toHaveProperty('lostAt')
   })
 
+  it('writes year and productType only when the patch includes them', async () => {
+    currentOpportunity = baseOpportunity()
+
+    await updateOpportunity('opp-1', { year: '2027', productType: 'Mini Plans' }, STAGES)
+    const withBoth = txUpdateMock.mock.calls[0]![1] as Record<string, unknown>
+    expect(withBoth.year).toBe('2027')
+    expect(withBoth.productType).toBe('Mini Plans')
+
+    txUpdateMock.mockClear()
+    await updateOpportunity('opp-1', { note: 'unrelated edit' }, STAGES)
+    const noYear = txUpdateMock.mock.calls[0]![1] as Record<string, unknown>
+    expect(noYear).not.toHaveProperty('year')
+    expect(noYear).not.toHaveProperty('productType')
+  })
+
   it('treats a retired stage missing from the caller-supplied stages list as neither won nor lost', async () => {
     // current.stage ('retired-stage') isn't in STAGES at all.
     currentOpportunity = baseOpportunity({ stage: 'retired-stage' })
@@ -229,7 +244,7 @@ describe('updateOpportunity — wonAt/lostAt transitions', () => {
 
     // Two reads: the opportunity itself, plus the linked contact — this
     // transition newly stamps lostAt, which also evaluates the contact's
-    // Win/Dead sync (see the "contact status sync" describe block below).
+    // Win/Lost sync (see the "contact status sync" describe block below).
     expect(txGetMock).toHaveBeenCalledTimes(2)
     const patch = txUpdateMock.mock.calls[0]![1] as Record<string, unknown>
     // Moving Won -> Lost: wonAt clears, lostAt stamps.
@@ -286,7 +301,7 @@ function contactUpdatePatch(): Record<string, unknown> | undefined {
   return call?.[1] as Record<string, unknown> | undefined
 }
 
-describe('updateOpportunity — contact status sync (Win/Dead)', () => {
+describe('updateOpportunity — contact status sync (Win/Lost)', () => {
   it('sets the linked contact to win when the opportunity transitions into a Won stage', async () => {
     currentOpportunity = baseOpportunity({ stage: 'verbal-commit' })
     currentContact = { status: 'warm' }
@@ -296,16 +311,16 @@ describe('updateOpportunity — contact status sync (Win/Dead)', () => {
     expect(contactUpdatePatch()).toMatchObject({ status: 'win' })
   })
 
-  it('sets the linked contact to dead when the opportunity transitions into a Lost stage', async () => {
+  it('sets the linked contact to lost when the opportunity transitions into a Lost stage', async () => {
     currentOpportunity = baseOpportunity({ stage: 'in-conversation' })
     currentContact = { status: 'active' }
 
     await updateOpportunity('opp-1', { stage: 'lost' }, STAGES)
 
-    expect(contactUpdatePatch()).toMatchObject({ status: 'dead' })
+    expect(contactUpdatePatch()).toMatchObject({ status: 'lost' })
   })
 
-  it('does NOT demote an already-Win contact to Dead when a different opportunity for the same contact is lost', async () => {
+  it('does NOT demote an already-Win contact to Lost when a different opportunity for the same contact is lost', async () => {
     // The confirmed tie-break: a contact who converted on one sport keeps
     // that status even if a separate pitch for another sport falls through.
     currentOpportunity = baseOpportunity({ stage: 'in-conversation' })
@@ -316,9 +331,9 @@ describe('updateOpportunity — contact status sync (Win/Dead)', () => {
     expect(contactUpdatePatch()).toBeUndefined()
   })
 
-  it('sets Win even over an existing Dead status from a different opportunity for the same contact', async () => {
+  it('sets Win even over an existing Lost status from a different opportunity for the same contact', async () => {
     currentOpportunity = baseOpportunity({ stage: 'in-conversation' })
-    currentContact = { status: 'dead' }
+    currentContact = { status: 'lost' }
 
     await updateOpportunity('opp-1', { stage: 'won' }, STAGES)
 
@@ -347,7 +362,7 @@ describe('updateOpportunity — contact status sync (Win/Dead)', () => {
     await updateOpportunity('opp-1', { stage: 'verbal-commit' }, STAGES)
 
     // Reopening clears wonAt on the OPPORTUNITY, but must not reach into
-    // the contact at all — demoting a contact off Win/Dead is out of
+    // the contact at all — demoting a contact off Win/Lost is out of
     // scope; those are set only by a fresh transition into Won/Lost.
     expect(contactUpdatePatch()).toBeUndefined()
   })
@@ -367,6 +382,8 @@ describe('createOpportunity — wonAt/lostAt stamping at creation', () => {
       contactId: 'contact-1',
       organizationId: null,
       sport: 'Football',
+      year: '2026',
+      productType: 'Season Tickets',
       stage,
       ownerId: 'rep-1',
       createdBy: 'rep-1',
@@ -379,6 +396,15 @@ describe('createOpportunity — wonAt/lostAt stamping at creation', () => {
     const payload = addDocMock.mock.calls[0]![1] as Record<string, unknown>
     expect(payload.wonAt).toBeDefined()
     expect(payload.lostAt).toBeUndefined()
+  })
+
+  it('persists sport, year, and product type onto the new opportunity', async () => {
+    await createOpportunity(createInput('created'), STAGES)
+
+    const payload = addDocMock.mock.calls[0]![1] as Record<string, unknown>
+    expect(payload.sport).toBe('Football')
+    expect(payload.year).toBe('2026')
+    expect(payload.productType).toBe('Season Tickets')
   })
 
   it('stamps lostAt (and not wonAt) when created directly into a Lost stage', async () => {

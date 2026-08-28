@@ -4,9 +4,14 @@
   justify-content: center;
 }
 
+/* Not 50%: the dial's SVG viewBox is shifted down inside its square box
+   (`VIEWBOX_Y_OFFSET` in ConnectionRateGauge.tsx) so the downward-opening arc
+   sits optically centred rather than jammed against the panel's top
+   edge. This offset keeps the readout in the dial's hub through that
+   shift — change it and the viewBox offset together, never one alone. */
 .center {
   position: absolute;
-  top: 50%;
+  top: 61.5%;
   left: 50%;
   transform: translate(-50%, -50%);
   text-align: center;
@@ -20,8 +25,8 @@
   display: block;
 }
 
-/* The readout sits in the dial's hub; nudged below centre so it clears
-   the needle pivot rather than sitting under it. */
+/* The readout that sits in the dial's hub. Its vertical placement is
+   `.center`'s `top` above, not a margin here. */
 .percent {
   font-family: var(--font-heading);
   font-size: 2rem;
@@ -43,7 +48,7 @@
   font-size: var(--font-size-caption);
 }
 
-.respondedCount::before {
+.connectedCount::before {
   content: '';
   display: inline-block;
   width: 0.6em;

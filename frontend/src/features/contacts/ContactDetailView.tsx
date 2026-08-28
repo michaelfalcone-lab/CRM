@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { ACTIVITY_TYPES, type ActivityType } from 'shared'
-import { Badge, Button, Card, Select } from '../../components/ui'
+import { Badge, Button, Card, Select, TextArea } from '../../components/ui'
 import { useCurrentUser } from '../../app/AuthProvider'
 import {
   canEditRecord,
@@ -10,6 +10,7 @@ import {
   parseLocalDateInput,
   toBadgeColor,
   todayLocalDateInput,
+  updateContact,
   useContact,
   useOpportunitiesForContact,
   useOwnerDirectory,
@@ -45,14 +46,30 @@ export function ContactDetailView() {
   const [logging, setLogging] = useState(false)
   const [logDate, setLogDate] = useState(() => todayLocalDateInput())
   const [logMode, setLogMode] = useState<ActivityType>('Outbound Call - Talked To')
+  const [logNote, setLogNote] = useState('')
   const [logSubmitting, setLogSubmitting] = useState(false)
   const [logError, setLogError] = useState<string | null>(null)
+  const [statusSaving, setStatusSaving] = useState(false)
 
   if (loading) return <Card>Loading…</Card>
   if (!contact) return <Card>Contact not found.</Card>
 
   const canEdit = canEditRecord(user, contact)
   const status = contact.status ? statuses.find((s) => s.id === contact.status) : undefined
+
+  /** Writes a manually-picked status. `''` (the "No status" placeholder)
+   * clears the field — `updateContact` maps a falsy status to a field
+   * delete, the same state a contact has before the workflow first
+   * advances it. */
+  async function handleStatusChange(next: string) {
+    if (statusSaving || next === (contact!.status ?? '')) return
+    setStatusSaving(true)
+    try {
+      await updateContact(contact!.id, { status: next || null })
+    } finally {
+      setStatusSaving(false)
+    }
+  }
 
   async function handleLogContact() {
     if (logSubmitting) return
@@ -68,9 +85,13 @@ export function ContactDetailView() {
         organizationId: contact!.organizationId,
         ownerId: contact!.ownerId,
         createdBy: user.authUid,
+        // `logContact` omits the field entirely when this is falsy, so an
+        // untouched note never writes an empty string onto the activity.
+        note: logNote || undefined,
         currentStatus: contact!.status,
       })
       setLogging(false)
+      setLogNote('')
     } catch (err) {
       setLogError(err instanceof Error ? err.message : 'Something went wrong. Please try again.')
     } finally {
@@ -102,8 +123,27 @@ export function ContactDetailView() {
               ) : (
                 <span className={styles.muted}>No organization</span>
               )}
-              {contact.status && (
-                <Badge color={toBadgeColor(status?.color)}>{status?.label ?? contact.status}</Badge>
+              {/* The status is directly editable here rather than on the
+                  Edit form: it's the one field a rep changes on its own,
+                  mid-conversation, without touching anything else. The
+                  automated workflow still advances it on activity logging
+                  — this is the manual override for the cases it can't see
+                  (a lead going cold, a correction). */}
+              {canEdit ? (
+                <Select
+                  id="contact-status"
+                  name="contactStatus"
+                  label="Status"
+                  options={statuses.map((s) => ({ value: s.id, label: s.label }))}
+                  placeholder="No status"
+                  value={contact.status ?? ''}
+                  disabled={statusSaving}
+                  onChange={(e) => void handleStatusChange(e.target.value)}
+                />
+              ) : (
+                contact.status && (
+                  <Badge color={toBadgeColor(status?.color)}>{status?.label ?? contact.status}</Badge>
+                )
               )}
               <span className={styles.muted}>
                 Owner: {ownerLabel(contact.ownerId, owners, user?.authUid ?? undefined)}
@@ -149,10 +189,25 @@ export function ContactDetailView() {
                   value={logMode}
                   onChange={(e) => setLogMode(e.target.value as ActivityType)}
                 />
+                <TextArea
+                  id="log-contact-note"
+                  name="logContactNote"
+                  label="Note (optional)"
+                  rows={2}
+                  value={logNote}
+                  onChange={(e) => setLogNote(e.target.value)}
+                />
                 <Button variant="primary" onClick={() => void handleLogContact()} disabled={logSubmitting}>
                   Save
                 </Button>
-                <Button variant="ghost" onClick={() => setLogging(false)} disabled={logSubmitting}>
+                <Button
+                  variant="ghost"
+                  onClick={() => {
+                    setLogging(false)
+                    setLogNote('')
+                  }}
+                  disabled={logSubmitting}
+                >
                   Cancel
                 </Button>
                 {logError && <p className={styles.formError}>{logError}</p>}
@@ -163,11 +218,15 @@ export function ContactDetailView() {
       </Card>
 
       {/* Contact Log leads: it's the factual record of what happened and
-          when (and what the dashboard's Win Rate reads), Notes is free-text
+          when (and what the dashboard's Connection Rate reads), Notes is free-text
           colour on top of it, and Opportunities — the least frequently
           checked of the three on a routine visit — comes last. */}
       <Card>
-        <ContactActivityPanel contactId={contact.id} contactCreatedAt={contact.createdAt} />
+        <ContactActivityPanel
+          contactId={contact.id}
+          contactCreatedAt={contact.createdAt}
+          currentUser={user}
+        />
       </Card>
 
       <Card>

@@ -90,6 +90,12 @@ export interface CreateOpportunityInput {
   contactId: string
   organizationId: string | null
   sport: Sport
+  /** 4-digit season year — one of `OPPORTUNITY_YEARS`. Required here even
+   * though `Opportunity.year` is optional on the doc: the field is
+   * optional only so pre-existing documents stay valid, and nothing
+   * created from now on should be missing it. Same for `productType`. */
+  year: string
+  productType: string
   stage: string
   note?: string
   ownerId: string
@@ -115,6 +121,8 @@ export async function createOpportunity(
     contactId: input.contactId,
     organizationId: input.organizationId,
     sport: input.sport,
+    year: input.year,
+    productType: input.productType,
     stage: input.stage,
     ownerId: input.ownerId,
     createdAt: serverTimestamp(),
@@ -130,6 +138,8 @@ export async function createOpportunity(
 
 export interface UpdateOpportunityInput {
   sport?: Sport
+  year?: string
+  productType?: string
   stage?: string
   note?: string | null
   /** `null`/`''` clears the field; `undefined` leaves it untouched. Not
@@ -183,11 +193,11 @@ export interface UpdateOpportunityInput {
  * offers, so `incoming` is always a real, active stage) and self-healing:
  * any move out of a won/lost stage — retired or not — clears the field.
  *
- * Also syncs the linked `Contact.status` to `'win'`/`'dead'`, in the same
+ * Also syncs the linked `Contact.status` to `'win'`/`'lost'`, in the same
  * transaction, on the moment of a fresh transition into Won/Lost (never on
  * reopening, and never on a no-op re-save) — see the "contact status sync"
  * block in this function's tests for the exact tie-break rules: Win always
- * wins, even over an existing Dead from a different sport's opportunity
+ * wins, even over an existing Lost from a different sport's opportunity
  * for the same contact; a Lost never demotes an already-Win contact. This
  * mirrors the same "read fresh inside the transaction, don't trust a
  * cached value" discipline as the `wonAt`/`lostAt` logic above — a
@@ -213,6 +223,8 @@ export async function updateOpportunity(
 
     const data: Record<string, unknown> = { updatedAt: serverTimestamp() }
     if (patch.sport !== undefined) data.sport = patch.sport
+    if (patch.year !== undefined) data.year = patch.year
+    if (patch.productType !== undefined) data.productType = patch.productType
     if (patch.note !== undefined) data.note = patch.note ?? ''
     if (patch.lostReason !== undefined) {
       data.lostReason = patch.lostReason ? patch.lostReason : deleteField()
@@ -259,7 +271,7 @@ export async function updateOpportunity(
 
     // All reads happen here, before either tx.update call below.
     let contactRef: ReturnType<typeof doc> | undefined
-    let nextContactStatus: 'win' | 'dead' | undefined
+    let nextContactStatus: 'win' | 'lost' | undefined
     if (freshTransition) {
       contactRef = doc(db, 'contacts', current.contactId)
       const contactSnap = await tx.get(contactRef)
@@ -268,7 +280,7 @@ export async function updateOpportunity(
         if (freshTransition === 'win') {
           nextContactStatus = 'win'
         } else if (contact.status !== 'win') {
-          nextContactStatus = 'dead'
+          nextContactStatus = 'lost'
         }
         // else: freshTransition === 'lost' but the contact already won
         // elsewhere — leave it untouched, per the tie-break rule above.

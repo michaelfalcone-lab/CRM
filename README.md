@@ -54,6 +54,49 @@ Suite running alongside the dev server:
 firebase emulators:start --only firestore,auth,functions
 ```
 
+The emulator serves Cloud Functions from the **compiled** output in `functions/lib`, not
+the TypeScript sources, so build them first (and after any change to them):
+
+```
+npm run build --workspace=functions
+```
+
+> **`firebase-tools` must be v14 or newer** — hence the `^14` pin in the root
+> `package.json`. `functions/package.json` declares `engines.node: 24`, and firebase-tools
+> 13.x only recognizes Node 20 and 22: it rejects the codebase with *"Detected node engine
+> 24 … Valid versions are 20, 22"* and loads **no** functions at all. The emulator still
+> starts and still reports "All emulators ready", so the only symptom is that every
+> callable and trigger is silently missing. The same validator runs on `firebase deploy`,
+> so a 13.x install cannot deploy this codebase either. If you have an older `node_modules`
+> from before this pin, run `npm install` — check with `npx firebase --version`.
+
+## Importing contacts locally
+
+Contact import is the one feature that does **not** write to Firestore from the browser:
+the commit runs through the `commitImport` Cloud Function, which does duplicate matching
+and writes the `importBatches` audit trail. That makes the Functions emulator a hard
+requirement for it — the seeder's suggested `--only firestore,auth` is enough to click
+through the rest of the app, but "Import Contacts" will fail against it because nothing is
+listening on port 5001.
+
+To exercise the flow end to end:
+
+1. `npm run build --workspace=functions`
+2. `firebase emulators:start --only firestore,auth,functions` — check the startup log
+   actually lists `functions[us-central1-commitImport]`. If it says "Failed to load function
+   definition from source", see the firebase-tools version note above; import cannot work
+   until that is resolved.
+3. `npm run dev`, then open **Import** in the sidebar.
+
+The wizard is four steps — choose file → map columns → preview → result — and there is no
+separate confirmation screen: the **"Import N Contacts"** button at the bottom of the
+Preview step *is* the commit. It stays disabled until a default owner is chosen and at
+least one row is valid (a row needs at least one of first name, last name, email, or
+phone; rows without any are flagged as skipped in the preview). `scripts/sample-contacts.csv`
+is a ready-made file for this. On success the imported contacts appear in the Contacts list
+immediately via its live snapshot, and an admin can undo the whole batch from the result
+step.
+
 ## Workspaces
 
 - `npm run build --workspace=shared` — type-check and compile the shared types package

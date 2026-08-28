@@ -1,7 +1,7 @@
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
-import type { Opportunity, Sport } from 'shared'
+import { OPPORTUNITY_YEARS, PRODUCT_TYPES, type Opportunity, type Sport } from 'shared'
 import { Button, Select, TextArea } from '../../components/ui'
 import { createOpportunity, updateOpportunity, useOpportunityStages, type WithId } from '../../lib'
 import { SPORTS } from './sports'
@@ -10,6 +10,13 @@ import styles from './OpportunityForm.module.css'
 const schema = z.object({
   contactId: z.string().min(1, 'Contact is required'),
   sport: z.string().refine((v) => (SPORTS as string[]).includes(v), 'Pick a sport'),
+  // Validated against the same lists the dropdowns render, so a stale
+  // form (an option retired between page load and submit) fails loudly
+  // instead of writing a value nothing else recognizes.
+  year: z.string().refine((v) => (OPPORTUNITY_YEARS as string[]).includes(v), 'Pick a year'),
+  productType: z
+    .string()
+    .refine((v) => (PRODUCT_TYPES as string[]).includes(v), 'Pick a product'),
   stage: z.string().min(1, 'Stage is required'),
   note: z.string().optional(),
 })
@@ -41,8 +48,8 @@ export interface OpportunityFormProps {
  * Add/edit form for one opportunity, reused by both the contact detail
  * page's inline "Add Opportunity" section and the organization detail
  * page's org-level opportunities section (via `contactId` or
- * `contactOptions` respectively — see prop docs). Only sport + stage are
- * required; note is optional, per the brief.
+ * `contactOptions` respectively — see prop docs). Sport, year, product,
+ * and stage are all required; note is optional.
  */
 export function OpportunityForm({
   currentUserUid,
@@ -64,12 +71,20 @@ export function OpportunityForm({
     defaultValues: {
       contactId: existing?.contactId ?? contactId ?? '',
       sport: existing?.sport ?? '',
+      // `?? ''` rather than a default year: an opportunity created before
+      // these fields existed has none, and guessing one would silently
+      // attribute it to a season nobody chose. The empty placeholder
+      // forces an explicit pick on the next edit.
+      year: existing?.year ?? '',
+      productType: existing?.productType ?? '',
       stage: existing?.stage ?? '',
       note: existing?.note ?? '',
     },
   })
 
   const sportOptions = SPORTS.map((s) => ({ value: s, label: s }))
+  const yearOptions = OPPORTUNITY_YEARS.map((y) => ({ value: y, label: y }))
+  const productOptions = PRODUCT_TYPES.map((p) => ({ value: p, label: p }))
   const stageOptions = stages.map((s) => ({ value: s.id, label: s.label }))
   if (existing && !stageOptions.some((o) => o.value === existing.stage)) {
     // Preserve a now-inactive stage rather than silently blanking it out.
@@ -83,6 +98,8 @@ export function OpportunityForm({
           existing.id,
           {
             sport: values.sport as Sport,
+            year: values.year,
+            productType: values.productType,
             stage: values.stage,
             note: values.note ?? null,
           },
@@ -94,6 +111,8 @@ export function OpportunityForm({
             contactId: values.contactId,
             organizationId,
             sport: values.sport as Sport,
+            year: values.year,
+            productType: values.productType,
             stage: values.stage,
             note: values.note || undefined,
             ownerId: currentUserUid,
@@ -129,6 +148,20 @@ export function OpportunityForm({
         placeholder="Select a sport"
         error={errors.sport?.message}
         {...register('sport')}
+      />
+      <Select
+        label="Year"
+        options={yearOptions}
+        placeholder="Select a year"
+        error={errors.year?.message}
+        {...register('year')}
+      />
+      <Select
+        label="Product"
+        options={productOptions}
+        placeholder="Select a product"
+        error={errors.productType?.message}
+        {...register('productType')}
       />
       <Select
         label="Stage"

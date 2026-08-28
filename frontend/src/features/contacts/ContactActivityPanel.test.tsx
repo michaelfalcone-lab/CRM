@@ -1,7 +1,7 @@
 /**
  * Component test for the per-contact activity log.
  *
- * This panel exists because the Win Rate metric asks reps to log an
+ * This panel exists because the Connection Rate metric asks reps to log an
  * outbound touch and its reply as two separate dated events — a workflow
  * nobody can trust without being able to see the resulting history. The
  * behaviours worth pinning are therefore: every logged interaction is
@@ -16,17 +16,32 @@
  *
  * `'../../lib'` is mocked entirely — pure jsdom/RTL, no Firestore.
  */
-import { describe, expect, it, vi } from 'vitest'
-import { render, screen, within } from '@testing-library/react'
-import type { Activity } from 'shared'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { render, screen, waitFor, within } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
+import type { Activity, User } from 'shared'
 import type { WithId } from '../../lib/firestoreTypes'
 import { ContactActivityPanel } from './ContactActivityPanel'
 
 const useActivitiesForContactMock = vi.fn()
+const deleteActivityMock = vi.fn()
 
 vi.mock('../../lib', () => ({
   useActivitiesForContact: (...args: unknown[]) => useActivitiesForContactMock(...args),
+  deleteActivity: (...args: unknown[]) => deleteActivityMock(...args),
 }))
+
+/** The activities' owner, so delete controls render by default. */
+const REP: User = {
+  email: 'rep@brown.edu',
+  displayName: 'Rep User',
+  position: 'Account Executive',
+  role: 'rep',
+  active: true,
+  authUid: 'rep-1',
+  createdAt: { seconds: 0, nanoseconds: 0 },
+  createdBy: 'admin',
+} as User
 
 function activity(overrides: Partial<WithId<Activity>> & { id: string }): WithId<Activity> {
   return {
@@ -43,6 +58,11 @@ function activity(overrides: Partial<WithId<Activity>> & { id: string }): WithId
 }
 
 describe('ContactActivityPanel', () => {
+  beforeEach(() => {
+    deleteActivityMock.mockReset()
+    deleteActivityMock.mockResolvedValue(undefined)
+  })
+
   it('renders one row per logged interaction, showing its type', () => {
     useActivitiesForContactMock.mockReturnValue({
       activities: [
@@ -53,7 +73,7 @@ describe('ContactActivityPanel', () => {
       error: null,
     })
 
-    render(<ContactActivityPanel contactId="c1" contactCreatedAt={{ seconds: 500, nanoseconds: 0 }} />)
+    render(<ContactActivityPanel contactId="c1" contactCreatedAt={{ seconds: 500, nanoseconds: 0 }} currentUser={REP} />)
 
     const items = screen.getAllByRole('listitem')
     expect(items).toHaveLength(2)
@@ -77,7 +97,7 @@ describe('ContactActivityPanel', () => {
       error: null,
     })
 
-    render(<ContactActivityPanel contactId="c1" contactCreatedAt={{ seconds: 500, nanoseconds: 0 }} />)
+    render(<ContactActivityPanel contactId="c1" contactCreatedAt={{ seconds: 500, nanoseconds: 0 }} currentUser={REP} />)
 
     const shown = screen.getByTestId('activity-date-a1').textContent ?? ''
     expect(shown).toContain('2026')
@@ -91,7 +111,7 @@ describe('ContactActivityPanel', () => {
       error: null,
     })
 
-    render(<ContactActivityPanel contactId="c1" contactCreatedAt={{ seconds: 500, nanoseconds: 0 }} />)
+    render(<ContactActivityPanel contactId="c1" contactCreatedAt={{ seconds: 500, nanoseconds: 0 }} currentUser={REP} />)
 
     expect(screen.getByText('Left a message with the front desk')).toBeInTheDocument()
   })
@@ -99,7 +119,7 @@ describe('ContactActivityPanel', () => {
   it('shows an explicit empty state rather than a bare empty list', () => {
     useActivitiesForContactMock.mockReturnValue({ activities: [], loading: false, error: null })
 
-    render(<ContactActivityPanel contactId="c1" contactCreatedAt={{ seconds: 500, nanoseconds: 0 }} />)
+    render(<ContactActivityPanel contactId="c1" contactCreatedAt={{ seconds: 500, nanoseconds: 0 }} currentUser={REP} />)
 
     expect(screen.getByText(/no contact logged yet/i)).toBeInTheDocument()
     expect(screen.queryAllByRole('listitem')).toHaveLength(0)
@@ -115,7 +135,7 @@ describe('ContactActivityPanel', () => {
       error: 'Missing or insufficient permissions.',
     })
 
-    render(<ContactActivityPanel contactId="c1" contactCreatedAt={{ seconds: 500, nanoseconds: 0 }} />)
+    render(<ContactActivityPanel contactId="c1" contactCreatedAt={{ seconds: 500, nanoseconds: 0 }} currentUser={REP} />)
 
     expect(screen.getByText(/Missing or insufficient permissions\./)).toBeInTheDocument()
     expect(screen.queryByText(/no contact logged yet/i)).not.toBeInTheDocument()
@@ -128,6 +148,7 @@ describe('ContactActivityPanel', () => {
       <ContactActivityPanel
         contactId="c1"
         contactCreatedAt={{ seconds: Math.floor(Date.UTC(2026, 0, 15, 12) / 1000), nanoseconds: 0 }}
+        currentUser={REP}
       />,
     )
 
@@ -145,11 +166,111 @@ describe('ContactActivityPanel', () => {
       error: null,
     })
 
-    render(<ContactActivityPanel contactId="c1" contactCreatedAt={{ seconds: 500, nanoseconds: 0 }} />)
+    render(<ContactActivityPanel contactId="c1" contactCreatedAt={{ seconds: 500, nanoseconds: 0 }} currentUser={REP} />)
 
     const items = screen.getAllByRole('listitem')
     expect(items).toHaveLength(1) // the synthetic entry is not among them
     expect(within(items[0]!).getByText('Email')).toBeInTheDocument()
     expect(screen.getByText(/added to crm/i)).toBeInTheDocument()
+  })
+})
+
+describe('ContactActivityPanel — deleting an entry', () => {
+  beforeEach(() => {
+    deleteActivityMock.mockReset()
+    deleteActivityMock.mockResolvedValue(undefined)
+  })
+
+  /** An admin who owns none of the activities. */
+  const ADMIN = { ...REP, authUid: 'admin-1', role: 'admin' } as User
+  /** A rep who owns none of the activities. */
+  const OTHER_REP = { ...REP, authUid: 'rep-2' } as User
+
+  function renderWith(currentUser: User | null, activities: WithId<Activity>[]) {
+    useActivitiesForContactMock.mockReturnValue({ activities, loading: false, error: null })
+    render(
+      <ContactActivityPanel
+        contactId="c1"
+        contactCreatedAt={{ seconds: 500, nanoseconds: 0 }}
+        currentUser={currentUser}
+      />,
+    )
+  }
+
+  it('requires a confirmation click before deleting — the first click only arms it', async () => {
+    const user = userEvent.setup()
+    renderWith(REP, [activity({ id: 'a1' })])
+
+    await user.click(screen.getByRole('button', { name: /delete email entry/i }))
+    expect(deleteActivityMock).not.toHaveBeenCalled()
+    expect(screen.getByText(/delete this entry\?/i)).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Delete' }))
+    await waitFor(() => expect(deleteActivityMock).toHaveBeenCalledTimes(1))
+  })
+
+  it('cancelling disarms the confirmation without deleting', async () => {
+    const user = userEvent.setup()
+    renderWith(REP, [activity({ id: 'a1' })])
+
+    await user.click(screen.getByRole('button', { name: /delete email entry/i }))
+    await user.click(screen.getByRole('button', { name: 'Cancel' }))
+
+    expect(deleteActivityMock).not.toHaveBeenCalled()
+    expect(screen.queryByText(/delete this entry\?/i)).not.toBeInTheDocument()
+  })
+
+  it('passes the REMAINING activities so the contact\'s last-contact can be recomputed', async () => {
+    const user = userEvent.setup()
+    const newest = activity({ id: 'a2', type: 'Inbound Call', occurredAt: { seconds: 2000, nanoseconds: 0 } })
+    const older = activity({ id: 'a1', type: 'Email', occurredAt: { seconds: 1000, nanoseconds: 0 } })
+    renderWith(REP, [newest, older])
+
+    await user.click(screen.getByRole('button', { name: /delete inbound call entry/i }))
+    await user.click(screen.getByRole('button', { name: 'Delete' }))
+
+    // The deleted entry must NOT be in the remaining set, or the contact's
+    // last-contact would be recomputed right back to the entry just removed.
+    await waitFor(() =>
+      expect(deleteActivityMock).toHaveBeenCalledWith('a2', 'c1', [
+        { type: 'Email', occurredAt: { seconds: 1000, nanoseconds: 0 } },
+      ]),
+    )
+  })
+
+  it('passes an empty remaining set when the last entry is deleted', async () => {
+    const user = userEvent.setup()
+    renderWith(REP, [activity({ id: 'a1' })])
+
+    await user.click(screen.getByRole('button', { name: /delete email entry/i }))
+    await user.click(screen.getByRole('button', { name: 'Delete' }))
+
+    await waitFor(() => expect(deleteActivityMock).toHaveBeenCalledWith('a1', 'c1', []))
+  })
+
+  it('surfaces a failure instead of silently leaving the entry in place', async () => {
+    const user = userEvent.setup()
+    deleteActivityMock.mockRejectedValue(new Error('Permission denied'))
+    renderWith(REP, [activity({ id: 'a1' })])
+
+    await user.click(screen.getByRole('button', { name: /delete email entry/i }))
+    await user.click(screen.getByRole('button', { name: 'Delete' }))
+
+    expect(await screen.findByText('Permission denied')).toBeInTheDocument()
+  })
+
+  it("does not offer delete on another rep's entry", () => {
+    renderWith(OTHER_REP, [activity({ id: 'a1', ownerId: 'rep-1' })])
+    expect(screen.queryByRole('button', { name: /delete email entry/i })).not.toBeInTheDocument()
+  })
+
+  it("offers delete to an admin on any rep's entry", () => {
+    renderWith(ADMIN, [activity({ id: 'a1', ownerId: 'rep-1' })])
+    expect(screen.getByRole('button', { name: /delete email entry/i })).toBeInTheDocument()
+  })
+
+  it('offers no delete control while the viewer is still resolving', () => {
+    renderWith(null, [activity({ id: 'a1' })])
+    expect(screen.queryByRole('button', { name: /delete email entry/i })).not.toBeInTheDocument()
   })
 })

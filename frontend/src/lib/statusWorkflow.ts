@@ -1,11 +1,11 @@
 /**
- * The automated Contact status workflow: New Lead → Active → Warm → Win/Dead.
+ * The automated Contact status workflow: New Lead → Active → Warm → Win/Lost.
  *
  * Only the first three transitions are driven from here (by activity
- * logging). Win/Dead are set exclusively by an Opportunity reaching a
+ * logging). Win/Lost are set exclusively by an Opportunity reaching a
  * Won/Lost stage — see `updateOpportunity` in `./firestore/opportunities`
  * — never by ordinary activity logging, which is why this function must
- * never return a value once a contact is already `'win'` or `'dead'`.
+ * never return a value once a contact is already `'win'` or `'lost'`.
  *
  * A pure function, no Firestore — `logContact` (`./firestore/contacts`)
  * calls it and folds the result into the same batch write that already
@@ -30,7 +30,7 @@ const WIN_ACTIVITY_TYPE_SET: ReadonlySet<ActivityType> = new Set(WIN_ACTIVITY_TY
  * should change (the caller then leaves `status` untouched).
  *
  * Monotonic and terminal-respecting:
- *   - `'win'`/`'dead'` are terminal — always returns `undefined` for them.
+ *   - `'win'`/`'lost'` are terminal — always returns `undefined` for them.
  *   - An unrecognized status (not one of `RANK`'s keys, and not a terminal
  *     value) is left alone too — e.g. a leftover value from a retired
  *     status set, or free-text from a CSV import. Reinterpreting it could
@@ -46,7 +46,7 @@ export function advanceStatusOnActivity(
   currentStatus: string | undefined,
   activityType: ActivityType,
 ): string | undefined {
-  if (currentStatus === 'win' || currentStatus === 'dead') return undefined
+  if (currentStatus === 'win' || currentStatus === 'lost') return undefined
 
   const currentRank = currentStatus === undefined ? RANK['new-lead']! : RANK[currentStatus]
   if (currentRank === undefined) return undefined // unrecognized status — leave it alone

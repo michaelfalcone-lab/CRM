@@ -1,3 +1,11 @@
+/* `min-width: 0` matters: this sits inside flex/grid parents, whose
+   default `min-width: auto` lets a wide child expand the container
+   instead of overflowing it — which would defeat the scroller. */
+.scroller {
+  overflow-x: auto;
+  min-width: 0;
+}
+
 .table {
   width: 100%;
   border-collapse: collapse;

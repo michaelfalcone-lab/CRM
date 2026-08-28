@@ -105,19 +105,22 @@ export const VIZ_CHART_WELL_BG = 'rgba(0, 0, 0, 0.4)'
 export const CHART_PANEL_BG = BRAND_BROWN
 
 /**
- * Total Output's 5 segments, in stacking order. Five distinct hues, one
- * per bucket — no reuse, which is what the previous neutral ramp couldn't
- * offer. Initial Outreach leads in green as the headline metric.
+ * Total Output's 4 segments, in stacking order. One distinct hue per
+ * bucket — no reuse, which is what the previous neutral ramp couldn't
+ * offer.
  *
- * This order is the validated one (worst adjacent CVD ΔE 23.1); see the
- * header before changing it.
+ * A fifth leading segment, Initial Outreach (in `VIZ_GREEN`), was removed
+ * when the chart stopped treating a contact's first touch of the period
+ * as its own category — every activity now counts under its method. The
+ * four surviving hues keep their original assignments, so this remains a
+ * subset of the validated palette order; `theme.test.ts` re-checks
+ * adjacent contrast on whatever set is here.
  */
 export const OUTPUT_BUCKETS = [
-  { key: 'initialOutreach', label: 'Initial Outreach', color: VIZ_GREEN },
   { key: 'calls', label: 'Calls', color: VIZ_MAGENTA },
   { key: 'emails', label: 'Emails', color: VIZ_YELLOW },
   { key: 'meetings', label: 'Meetings', color: VIZ_CYAN },
-  { key: 'followUps', label: 'Follow-ups', color: VIZ_ORANGE },
+  { key: 'followUps', label: 'Follow-Ups', color: VIZ_ORANGE },
 ] as const
 
 /**

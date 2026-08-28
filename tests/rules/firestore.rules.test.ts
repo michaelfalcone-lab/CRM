@@ -336,10 +336,14 @@ describe('create — ownerId enforcement (organizations, contacts, opportunities
 
 describe('update / delete — ownership + ownerId immutability (organizations, contacts, opportunities, activities)', () => {
   const fixtures = [
-    { name: 'organizations', docId: 'org-rep' },
-    { name: 'contacts', docId: 'contact-rep' },
-    { name: 'opportunities', docId: 'opp-rep' },
-    { name: 'activities', docId: 'activity-rep' },
+    { name: 'organizations', docId: 'org-rep', repMayDeleteOwn: false },
+    { name: 'contacts', docId: 'contact-rep', repMayDeleteOwn: false },
+    { name: 'opportunities', docId: 'opp-rep', repMayDeleteOwn: false },
+    // The one exception: a rep may delete their OWN activity, so a
+    // mislogged entry can be removed from a contact's log without an
+    // admin. See `firestore.rules`' comment on the activities block, and
+    // the dedicated cases in the "activity delete" describe below.
+    { name: 'activities', docId: 'activity-rep', repMayDeleteOwn: true },
   ] as const
 
   for (const f of fixtures) {
@@ -363,8 +367,15 @@ describe('update / delete — ownership + ownerId immutability (organizations, c
       await assertSucceeds(updateDoc(doc(db, f.name, f.docId), { ownerId: REP2_UID }))
     })
 
-    it(`rep is denied deleting ${f.name}`, async () => {
-      const db = rep().firestore()
+    if (!f.repMayDeleteOwn) {
+      it(`rep is denied deleting own ${f.name}`, async () => {
+        const db = rep().firestore()
+        await assertFails(deleteDoc(doc(db, f.name, f.docId)))
+      })
+    }
+
+    it(`rep is denied deleting another rep's ${f.name}`, async () => {
+      const db = rep2().firestore()
       await assertFails(deleteDoc(doc(db, f.name, f.docId)))
     })
 
@@ -373,6 +384,28 @@ describe('update / delete — ownership + ownerId immutability (organizations, c
       await assertSucceeds(deleteDoc(doc(db, f.name, f.docId)))
     })
   }
+})
+
+describe('activity delete — the rep-owned correction path', () => {
+  it('rep can delete their own activity (a mislogged entry)', async () => {
+    const db = rep().firestore()
+    await assertSucceeds(deleteDoc(doc(db, 'activities', 'activity-rep')))
+  })
+
+  it("rep is denied deleting another rep's activity", async () => {
+    const db = rep2().firestore()
+    await assertFails(deleteDoc(doc(db, 'activities', 'activity-rep')))
+  })
+
+  it('admin can delete any activity', async () => {
+    const db = admin().firestore()
+    await assertSucceeds(deleteDoc(doc(db, 'activities', 'activity-rep')))
+  })
+
+  it('an inactive user is denied deleting an activity', async () => {
+    const db = inactiveRep().firestore()
+    await assertFails(deleteDoc(doc(db, 'activities', 'activity-rep')))
+  })
 })
 
 describe('unlinked user / inactive user — denied everything requiring isActiveUser()', () => {

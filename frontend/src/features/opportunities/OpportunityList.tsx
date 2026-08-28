@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import type { Opportunity, User } from 'shared'
-import { Button, Card } from '../../components/ui'
-import { canEditRecord, useOpportunityStages, type WithId } from '../../lib'
+import { Button, Card, Select } from '../../components/ui'
+import { canEditRecord, updateOpportunity, useOpportunityStages, type WithId } from '../../lib'
 import { OpportunityForm } from './OpportunityForm'
 import { StageBadge } from './StageBadge'
 import styles from './OpportunityList.module.css'
@@ -19,9 +19,16 @@ export interface OpportunityListProps {
   contactLabels?: Record<string, string>
 }
 
-/** Compact opportunity list (sport + stage badge) with an inline
- * add/edit form, reused by both the contact and organization detail
- * pages. */
+/** Sport · year · product, joined for the row's one-line summary. Skips
+ * blanks so an opportunity created before year/productType existed reads
+ * as just its sport rather than "Football ·  · ". */
+function summarize(opp: WithId<Opportunity>): string {
+  return [opp.sport, opp.year, opp.productType].filter(Boolean).join(' · ')
+}
+
+/** Compact opportunity list (sport/year/product + a one-click stage
+ * dropdown) with an inline add/edit form, reused by both the contact and
+ * organization detail pages. */
 export function OpportunityList({
   opportunities,
   organizationId,
@@ -35,6 +42,22 @@ export function OpportunityList({
   const stageById = new Map(stages.map((s) => [s.id, s]))
   const [adding, setAdding] = useState(false)
   const [editingId, setEditingId] = useState<string | null>(null)
+  /** The opportunity whose stage write is in flight, or `null`. */
+  const [stageSavingId, setStageSavingId] = useState<string | null>(null)
+
+  async function handleStageChange(opp: WithId<Opportunity>, nextStage: string) {
+    if (stageSavingId || nextStage === opp.stage) return
+    setStageSavingId(opp.id)
+    try {
+      // `updateOpportunity` runs the same transaction the Edit form does —
+      // it stamps `wonAt`/`lostAt` and syncs the linked contact's status
+      // on a won/lost transition, so a one-click stage change here is not
+      // a shortcut past that bookkeeping.
+      await updateOpportunity(opp.id, { stage: nextStage }, stages)
+    } finally {
+      setStageSavingId(null)
+    }
+  }
 
   if (!currentUser?.authUid) return null
   const currentUserUid = currentUser.authUid
@@ -95,8 +118,30 @@ export function OpportunityList({
                 ) : (
                   <>
                     <div className={styles.rowMain}>
-                      <span className={styles.sport}>{opp.sport}</span>
-                      <StageBadge label={stage?.label ?? opp.stage} color={stage?.color} />
+                      <span className={styles.sport}>{summarize(opp)}</span>
+                      {canEdit && stages.length > 0 ? (
+                        <Select
+                          id={`opp-stage-${opp.id}`}
+                          name="opportunityStage"
+                          label="Stage"
+                          className={styles.stageSelect}
+                          options={
+                            stageById.has(opp.stage)
+                              ? stages.map((s) => ({ value: s.id, label: s.label }))
+                              : // Keep a since-retired stage selectable rather than
+                                // snapping the row to whatever sorts first.
+                                [
+                                  { value: opp.stage, label: `${opp.stage} (inactive)` },
+                                  ...stages.map((s) => ({ value: s.id, label: s.label })),
+                                ]
+                          }
+                          value={opp.stage}
+                          disabled={stageSavingId === opp.id}
+                          onChange={(e) => void handleStageChange(opp, e.target.value)}
+                        />
+                      ) : (
+                        <StageBadge label={stage?.label ?? opp.stage} color={stage?.color} />
+                      )}
                       {contactLabels?.[opp.contactId] && (
                         <span className={styles.contactLabel}>{contactLabels[opp.contactId]}</span>
                       )}

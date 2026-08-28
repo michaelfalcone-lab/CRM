@@ -1,9 +1,9 @@
 /**
  * Phone input formatting for the Add Contact form: exactly 10 digits,
- * live-formatted to `XXX-XXX-XXXX`, with a `401` area-code default that
- * behaves like a placeholder rather than a real value until the user
- * either accepts it (tabbing/blurring away with nothing typed) or
- * overrides it (typing anything at all).
+ * live-formatted to `XXX-XXX-XXXX` as the user types. The field starts
+ * empty and nothing is ever pre-filled — an earlier version committed a
+ * `401-` area-code default on blur, which made tabbing through the field
+ * silently plant a 3-digit value that then failed validation.
  *
  * Pure functions only — no DOM, no React — so the exact formatting and
  * digit-counting rules are unit-testable without rendering a component.
@@ -15,9 +15,9 @@ export function digitsOnly(value: string): string {
 }
 
 /** How many real digits `value` carries — the number the "exactly 10"
- * requirement actually checks against. A bare accepted `'401-'` default
- * (3 digits, no local number typed) is deliberately NOT 10, so it does
- * not satisfy the phone-is-present check on its own. */
+ * requirement actually checks against. A partial entry (say an area code
+ * alone, 3 digits) is deliberately NOT 10, so it does not satisfy the
+ * phone-is-present check on its own. */
 export function phoneDigitCount(value: string | undefined): number {
   return digitsOnly(value ?? '').length
 }
@@ -49,9 +49,6 @@ export function formatPhoneInput(raw: string): string {
   return formatPhoneDigits(digitsOnly(raw))
 }
 
-/** The area-code default's placeholder text and its committed form —
- * intentionally the same string. Seeing "401-" in the field after
- * accepting the default and seeing it while it was still just a
- * placeholder must look identical; only where it came from differs. */
-export const PHONE_DEFAULT_PREFIX = '401-'
+/** Placeholder text only — a hint at the expected shape, never written
+ * into the field as a value. */
 export const PHONE_PLACEHOLDER = '401-XXX-XXXX'

@@ -22,10 +22,12 @@ const collectionMock = vi.fn((...args: unknown[]) => ({ __collection: args.slice
 const docMock = vi.fn((...args: unknown[]) => ({ __doc: args.slice(1) }))
 const batchUpdateMock = vi.fn()
 const batchSetMock = vi.fn()
+const batchDeleteMock = vi.fn()
 const batchCommitMock = vi.fn()
 const writeBatchMock = vi.fn((..._args: unknown[]) => ({
   update: batchUpdateMock,
   set: batchSetMock,
+  delete: batchDeleteMock,
   commit: batchCommitMock,
 }))
 let snapshotCallback: ((snapshot: { docs: { id: string; data: () => unknown }[] }) => void) | undefined
@@ -49,12 +51,20 @@ vi.mock('firebase/firestore', () => ({
   deleteField: vi.fn(() => ({ __deleteField: true })),
   Timestamp: {
     fromDate: vi.fn((d: Date) => ({ seconds: Math.floor(d.getTime() / 1000), nanoseconds: 0 })),
+    fromMillis: vi.fn((ms: number) => ({ seconds: Math.floor(ms / 1000), nanoseconds: 0 })),
   },
 }))
 
 vi.mock('../firebase', () => ({ db: {} }))
 
-import { ACTIVITY_TYPE_TO_LAST_CONTACT_MODE, createContact, logContact, updateContact, useContacts } from './contacts'
+import {
+  ACTIVITY_TYPE_TO_LAST_CONTACT_MODE,
+  createContact,
+  deleteActivity,
+  logContact,
+  updateContact,
+  useContacts,
+} from './contacts'
 
 function contactDoc(id: string, overrides: Partial<Contact> = {}): { id: string; data: () => Contact } {
   const data: Contact = {
@@ -323,7 +333,7 @@ describe('logContact', () => {
       expect(contactPatch).not.toHaveProperty('status')
     })
 
-    it('never advances a terminal (win/dead) contact off its terminal status', async () => {
+    it('never advances a terminal (win/lost) contact off its terminal status', async () => {
       await logContact('contact-1', 'Inbound Call', new Date(), { ...baseContext, currentStatus: 'win' })
       const contactPatch = batchUpdateMock.mock.calls[0]![1] as Record<string, unknown>
       expect(contactPatch).not.toHaveProperty('status')
@@ -340,6 +350,77 @@ describe('logContact', () => {
     await logContact('contact-1', 'Email', new Date(), { ...baseContext, organizationId: null })
     const activityPayload = batchSetMock.mock.calls[0]![1] as Record<string, unknown>
     expect(activityPayload.organizationId).toBeNull()
+  })
+})
+
+describe('deleteActivity', () => {
+  /** The contact patch the single batch writes alongside the delete. */
+  function contactPatch(): Record<string, unknown> {
+    return batchUpdateMock.mock.calls[0]![1] as Record<string, unknown>
+  }
+
+  it('deletes the activity and patches the contact in ONE batch', async () => {
+    // Both writes must land together: a delete that succeeded while the
+    // contact patch failed would leave a "last contact" date pointing at
+    // an entry that no longer exists.
+    await deleteActivity('activity-1', 'contact-1', [])
+    expect(batchDeleteMock).toHaveBeenCalledTimes(1)
+    expect(batchUpdateMock).toHaveBeenCalledTimes(1)
+    expect(batchCommitMock).toHaveBeenCalledTimes(1)
+    expect(docMock).toHaveBeenCalledWith({}, 'activities', 'activity-1')
+    expect(docMock).toHaveBeenCalledWith({}, 'contacts', 'contact-1')
+  })
+
+  it('clears both last-contact fields when no activities remain', async () => {
+    // Deleted, not zeroed — a `seconds: 0` timestamp would render as a
+    // real contact date of 1970 rather than "Never".
+    await deleteActivity('activity-1', 'contact-1', [])
+    expect(contactPatch().lastContactDate).toEqual({ __deleteField: true })
+    expect(contactPatch().lastContactMode).toEqual({ __deleteField: true })
+  })
+
+  it('recomputes last contact from the newest REMAINING activity', async () => {
+    await deleteActivity('activity-newest', 'contact-1', [
+      { type: 'Email', occurredAt: { seconds: 1000, nanoseconds: 0 } },
+      { type: 'Inbound Call', occurredAt: { seconds: 3000, nanoseconds: 0 } },
+      { type: 'Onsite Appointment', occurredAt: { seconds: 2000, nanoseconds: 0 } },
+    ])
+    expect(contactPatch().lastContactDate).toEqual({ seconds: 3000, nanoseconds: 0 })
+    // Mapped through the same table `logContact` uses, not the raw type.
+    expect(contactPatch().lastContactMode).toBe(ACTIVITY_TYPE_TO_LAST_CONTACT_MODE['Inbound Call'])
+  })
+
+  it('does not depend on the remaining activities being sorted', async () => {
+    // The caller passes its already-fetched list; nothing guarantees the
+    // newest is first (or last) after one entry is filtered out of it.
+    await deleteActivity('activity-1', 'contact-1', [
+      { type: 'Inbound Call', occurredAt: { seconds: 3000, nanoseconds: 0 } },
+      { type: 'Email', occurredAt: { seconds: 1000, nanoseconds: 0 } },
+    ])
+    expect(contactPatch().lastContactDate).toEqual({ seconds: 3000, nanoseconds: 0 })
+  })
+
+  it('recomputes to the same values when a non-newest entry is deleted', async () => {
+    // Deleting an older entry must not disturb the contact's last-contact
+    // line — the recompute simply lands on the same newest entry again.
+    await deleteActivity('activity-old', 'contact-1', [
+      { type: 'Email', occurredAt: { seconds: 5000, nanoseconds: 0 } },
+    ])
+    expect(contactPatch().lastContactDate).toEqual({ seconds: 5000, nanoseconds: 0 })
+    expect(contactPatch().lastContactMode).toBe('Email')
+  })
+
+  it('bumps updatedAt', async () => {
+    await deleteActivity('activity-1', 'contact-1', [])
+    expect(contactPatch().updatedAt).toEqual({ __serverTimestamp: true })
+  })
+
+  it('never reverts the contact status', async () => {
+    // Status advancement is monotonic and lossy — it records that a
+    // contact REACHED Warm, not which activity took it there, so there is
+    // nothing to roll back to. Correcting it is the status control's job.
+    await deleteActivity('activity-1', 'contact-1', [])
+    expect(contactPatch()).not.toHaveProperty('status')
   })
 })
 

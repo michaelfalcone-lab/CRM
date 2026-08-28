@@ -7,9 +7,22 @@ import styles from './Table.module.css'
  * ...`) rather than reaching for a table library. Extend, don't replace.
  */
 
+/**
+ * Wrapped in its own `overflow-x: auto` scroller so a table too wide for
+ * its container scrolls inside itself. Without it a wide table stretches
+ * its parent and puts the whole PAGE into horizontal scroll — the sidebar
+ * and header slide away with it, which is far worse than a scrollbar on
+ * the table. The wrapper is keyboard-focusable (`tabIndex={0}`) because a
+ * scrollable region that can only be reached with a mouse strands
+ * keyboard users at whatever columns happen to be visible.
+ */
 export function Table(props: TableHTMLAttributes<HTMLTableElement>) {
   const { className, ...rest } = props
-  return <table className={[styles.table, className].filter(Boolean).join(' ')} {...rest} />
+  return (
+    <div className={styles.scroller} tabIndex={0}>
+      <table className={[styles.table, className].filter(Boolean).join(' ')} {...rest} />
+    </div>
+  )
 }
 
 export function TableHead(props: HTMLAttributes<HTMLTableSectionElement>) {

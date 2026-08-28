@@ -1,5 +1,6 @@
-import type { FirestoreTimestamp } from 'shared'
-import { useActivitiesForContact } from '../../lib'
+import { useState } from 'react'
+import type { FirestoreTimestamp, User } from 'shared'
+import { deleteActivity, useActivitiesForContact } from '../../lib'
 import styles from './ContactActivityPanel.module.css'
 
 function formatOccurredAt(ts: { seconds: number } | undefined): string {
@@ -18,6 +19,9 @@ export interface ContactActivityPanelProps {
    * zero real activity still has an origin point in the log instead of
    * showing nothing at all. */
   contactCreatedAt: FirestoreTimestamp
+  /** The viewer, for deciding which entries they may delete. `null` while
+   * auth is still resolving — no entry shows a delete control then. */
+  currentUser: User | null
 }
 
 /**
@@ -27,7 +31,7 @@ export interface ContactActivityPanelProps {
  *
  * Exists because outreach is logged as a sequence of separate dated
  * events — an outbound email and the reply that comes back days later are
- * two entries, not one — and the Win Rate metric turns on that
+ * two entries, not one — and the Connection Rate metric turns on that
  * distinction. Without a visible log, a rep has no way to tell whether a
  * reply was ever recorded, which is exactly the thing the metric counts.
  *
@@ -36,11 +40,49 @@ export interface ContactActivityPanelProps {
  * outside the `<ul>` of real activities (not a `listitem`), so it can
  * never be mistaken for something a rep logged or can act on.
  *
- * Read-only: logging happens through the contact header's "Add Action"
- * button, so there is one way to create an activity rather than two.
+ * Entries can be deleted here but never created: logging happens through
+ * the contact header's "Add Action" button, so there is one way to create
+ * an activity rather than two. Deletion lives here instead because an
+ * entry can only be identified in the context of the log it sits in —
+ * and a mislogged action otherwise skews both the contact's history and
+ * the rep's dashboard counts permanently.
  */
-export function ContactActivityPanel({ contactId, contactCreatedAt }: ContactActivityPanelProps) {
+export function ContactActivityPanel({
+  contactId,
+  contactCreatedAt,
+  currentUser,
+}: ContactActivityPanelProps) {
   const { activities, loading, error } = useActivitiesForContact(contactId)
+  /** The entry awaiting delete confirmation, or `null`. A second click on
+   * the same row confirms; opening a different row's confirm replaces it,
+   * so at most one destructive action is ever armed. */
+  const [confirmingId, setConfirmingId] = useState<string | null>(null)
+  const [deletingId, setDeletingId] = useState<string | null>(null)
+  const [deleteError, setDeleteError] = useState<string | null>(null)
+
+  const isAdmin = currentUser?.role === 'admin'
+  const canDelete = (ownerId: string) =>
+    isAdmin || (!!currentUser?.authUid && currentUser.authUid === ownerId)
+
+  async function handleDelete(activityId: string) {
+    if (deletingId) return
+    setDeletingId(activityId)
+    setDeleteError(null)
+    try {
+      // The remaining set drives the contact's recomputed "last contact"
+      // — see `deleteActivity`. Derived from the live list this panel is
+      // already subscribed to rather than re-queried.
+      const remaining = activities
+        .filter((a) => a.id !== activityId)
+        .map((a) => ({ type: a.type, occurredAt: a.occurredAt }))
+      await deleteActivity(activityId, contactId, remaining)
+      setConfirmingId(null)
+    } catch (err) {
+      setDeleteError(err instanceof Error ? err.message : 'Could not delete this entry.')
+    } finally {
+      setDeletingId(null)
+    }
+  }
 
   return (
     <div className={styles.section}>
@@ -53,6 +95,7 @@ export function ContactActivityPanel({ contactId, contactCreatedAt }: ContactAct
       {!loading && !error && activities.length === 0 && (
         <p className={styles.empty}>No contact logged yet.</p>
       )}
+      {deleteError && <p className={styles.error}>{deleteError}</p>}
 
       {!loading && !error && activities.length > 0 && (
         <ul className={styles.list}>
@@ -63,6 +106,40 @@ export function ContactActivityPanel({ contactId, contactCreatedAt }: ContactAct
                 <span className={styles.timestamp} data-testid={`activity-date-${activity.id}`}>
                   {formatOccurredAt(activity.occurredAt)}
                 </span>
+                {canDelete(activity.ownerId) &&
+                  (confirmingId === activity.id ? (
+                    <span className={styles.confirm}>
+                      Delete this entry?
+                      <button
+                        type="button"
+                        className={styles.confirmDelete}
+                        disabled={deletingId === activity.id}
+                        onClick={() => void handleDelete(activity.id)}
+                      >
+                        Delete
+                      </button>
+                      <button
+                        type="button"
+                        className={styles.confirmCancel}
+                        disabled={deletingId === activity.id}
+                        onClick={() => setConfirmingId(null)}
+                      >
+                        Cancel
+                      </button>
+                    </span>
+                  ) : (
+                    <button
+                      type="button"
+                      className={styles.deleteButton}
+                      aria-label={`Delete ${activity.type} entry from ${formatOccurredAt(activity.occurredAt)}`}
+                      onClick={() => {
+                        setDeleteError(null)
+                        setConfirmingId(activity.id)
+                      }}
+                    >
+                      ×
+                    </button>
+                  ))}
               </div>
               {activity.note && <p className={styles.note}>{activity.note}</p>}
             </li>

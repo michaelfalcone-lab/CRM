@@ -52,7 +52,11 @@
   gap: var(--space-3);
 }
 
+/* Takes the slack so the timestamp and delete control sit together at
+   the right edge — `space-between` alone would spread all three evenly
+   once the delete button joined the row. */
 .type {
+  flex: 1;
   font-weight: 600;
   color: var(--brand-brown);
 }
@@ -68,4 +72,57 @@
 .note {
   margin: var(--space-2) 0 0;
   color: var(--gray-800);
+}
+
+/* Deliberately quiet: deleting a log entry is a correction, not a routine
+   action, so it must not compete with the entry's own content. It gains
+   colour only on hover/focus, once the pointer is already committed. */
+.deleteButton {
+  background: none;
+  border: none;
+  padding: 0 var(--space-1);
+  font-size: 1.1rem;
+  line-height: 1;
+  color: var(--gray-500);
+  cursor: pointer;
+}
+
+.deleteButton:hover,
+.deleteButton:focus-visible {
+  color: var(--brand-red);
+}
+
+.confirm {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-family: var(--font-caption);
+  font-size: var(--font-size-caption);
+  color: var(--gray-700);
+  white-space: nowrap;
+}
+
+.confirmDelete,
+.confirmCancel {
+  background: none;
+  border: none;
+  padding: 0;
+  font: inherit;
+  cursor: pointer;
+  text-decoration: underline;
+}
+
+.confirmDelete {
+  color: var(--brand-red);
+  font-weight: 600;
+}
+
+.confirmCancel {
+  color: var(--gray-600);
+}
+
+.confirmDelete:disabled,
+.confirmCancel:disabled {
+  cursor: default;
+  opacity: 0.6;
 }

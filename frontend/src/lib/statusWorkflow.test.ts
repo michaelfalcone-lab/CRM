@@ -1,6 +1,6 @@
 /**
  * `advanceStatusOnActivity` is the whole of the automated New Lead → Active
- * → Warm status progression. Win/Dead are deliberately out of scope here —
+ * → Warm status progression. Win/Lost are deliberately out of scope here —
  * those are set only by an Opportunity reaching a Won/Lost stage (see
  * `opportunities.ts`), never by ordinary activity logging, and this
  * function's terminal-state tests exist to pin exactly that boundary.
@@ -41,7 +41,7 @@ describe('advanceStatusOnActivity', () => {
     expect(advanceStatusOnActivity('warm', 'Inbound Call')).toBeUndefined()
   })
 
-  it.each(['win', 'dead'])(
+  it.each(['win', 'lost'])(
     'never returns a new status once the contact is terminal (%s) — activity logging cannot undo a conversion outcome',
     (terminal) => {
       expect(advanceStatusOnActivity(terminal, 'Inbound Call')).toBeUndefined()

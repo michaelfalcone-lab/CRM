@@ -38,7 +38,41 @@ export interface PreviewStepProps {
   onCommitted: (result: CommitImportResult) => void
 }
 
+/**
+ * Firebase callable error codes that mean "the request never reached a
+ * running `commitImport`", as opposed to one that ran and rejected the
+ * data. `functions/unavailable` is what the SDK reports when nothing is
+ * listening on the callable's endpoint; `functions/internal` is what a
+ * failed fetch (connection refused, dev server proxy) collapses into.
+ */
+const UNREACHABLE_CODES = ['functions/unavailable', 'functions/internal']
+
+/** True when `err` looks like the import backend simply isn't running. */
+function isBackendUnreachable(err: unknown): boolean {
+  const code = (err as { code?: unknown } | null)?.code
+  return typeof code === 'string' && UNREACHABLE_CODES.includes(code)
+}
+
+/**
+ * Importing is the one action in the app that goes through a Cloud
+ * Function rather than writing to Firestore from the browser, so it is
+ * also the one action that fails when a local dev session started the
+ * emulators without `functions` (the seeder's documented command is
+ * `--only firestore,auth`). That failure used to surface as a bare
+ * "internal" from the SDK next to a button that looked like it should
+ * have worked, which reads as "the import feature is broken" rather than
+ * "a service isn't running" — hence the explicit remedy here.
+ */
 function describeError(err: unknown): string {
+  if (isBackendUnreachable(err)) {
+    return (
+      "Couldn't reach the import service. Importing runs through a Cloud Function, so on " +
+      'local dev the Functions emulator has to be running: build it once with ' +
+      '`npm run build --workspace=functions`, then start the emulators with ' +
+      '`firebase emulators:start --only firestore,auth,functions`. Your mapped rows are ' +
+      'still here — press Import again once it is up.'
+    )
+  }
   return err instanceof Error ? err.message : 'Something went wrong. Please try again.'
 }
 
