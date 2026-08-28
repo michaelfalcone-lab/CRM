@@ -35,6 +35,7 @@ import {
 import type { ActivityType, Contact, LastContactMode } from 'shared'
 import { db } from '../firebase'
 import type { WithId } from '../firestoreTypes'
+import { advanceStatusOnActivity } from '../statusWorkflow'
 
 export interface ContactFilters {
   ownerId?: string
@@ -148,24 +149,35 @@ export interface CreateContactInput {
   phone?: string
   organizationId: string | null
   organizationName?: string
-  status?: string
-  lastContactDate?: Date
-  lastContactMode?: LastContactMode
   /** The caller's own uid, unless the caller is an admin picking someone
    * else — rules reject any other combination on create. */
   ownerId: string
   createdBy: string
 }
 
-/** Only `firstName`/`lastName` are required — everything else is omitted
+/**
+ * Only `firstName`/`lastName` are required — everything else is omitted
  * from the write payload entirely when absent, matching the `Contact`
  * type's optional fields (rather than writing `undefined`, which the
- * Firestore SDK rejects). Returns the new doc's id. */
+ * Firestore SDK rejects). Returns the new doc's id.
+ *
+ * Every new contact starts at `status: 'new-lead'` — fixed here, not a
+ * caller-supplied value, since the automated status workflow
+ * (`../statusWorkflow`) owns every transition from this point on and a
+ * form field would let a rep set it out of band. `lastContactDate`/
+ * `lastContactMode` are deliberately NOT accepted here either: if the
+ * contact being added has already been reached, that's logged as a real
+ * `Activity` via `logContact` right after creation (see
+ * `ContactFormView.tsx`), not baked into the create payload — the earlier
+ * version of this function did the latter, which meant a rep entering
+ * someone they'd just called got no matching entry in the Contact Log.
+ */
 export async function createContact(input: CreateContactInput): Promise<string> {
   const payload: Record<string, unknown> = {
     firstName: input.firstName.trim(),
     lastName: input.lastName.trim(),
     organizationId: input.organizationId,
+    status: 'new-lead',
     ownerId: input.ownerId,
     source: 'manual',
     externalIds: { paciolanCustomerId: null },
@@ -183,9 +195,6 @@ export async function createContact(input: CreateContactInput): Promise<string> 
   if (input.organizationId && input.organizationName) {
     payload.organizationName = input.organizationName
   }
-  if (input.status) payload.status = input.status
-  if (input.lastContactDate) payload.lastContactDate = Timestamp.fromDate(input.lastContactDate)
-  if (input.lastContactMode) payload.lastContactMode = input.lastContactMode
 
   const ref = await addDoc(collection(db, 'contacts'), payload)
   return ref.id
@@ -249,11 +258,15 @@ export async function updateContact(id: string, patch: UpdateContactInput): Prom
  */
 export const ACTIVITY_TYPE_TO_LAST_CONTACT_MODE: Record<ActivityType, LastContactMode> = {
   Email: 'Email',
+  // A reply collapses to the same legacy mode as the outbound touch it
+  // answers — the legacy field records HOW the last contact happened, not
+  // which direction it went.
+  'Email Reply Received': 'Email',
   'Inbound Call': 'Phone',
   'Outbound Call - Talked To': 'Phone',
   'Outbound Call - VM': 'Phone',
+  'Voicemail Returned': 'Phone',
   'Onsite Appointment': 'In-Person',
-  'Seat Visit': 'In-Person',
   Other: 'Other',
 }
 
@@ -266,6 +279,12 @@ export interface LogContactContext {
   ownerId: string
   createdBy: string
   note?: string
+  /** The contact's `status` field *before* this activity — passed in
+   * (rather than read here) because every caller already has the full
+   * `Contact` doc in scope. Used to compute whether this activity should
+   * advance New Lead→Active→Warm; omit for a brand-new contact (treated
+   * the same as `'new-lead'`). See `../statusWorkflow`. */
+  currentStatus?: string
 }
 
 /**
@@ -290,11 +309,18 @@ export async function logContact(
   const batch = writeBatch(db)
   const occurredAt = Timestamp.fromDate(when)
 
-  batch.update(doc(db, 'contacts', id), {
+  const contactPatch: Record<string, unknown> = {
     lastContactDate: occurredAt,
     lastContactMode: ACTIVITY_TYPE_TO_LAST_CONTACT_MODE[type],
     updatedAt: serverTimestamp(),
-  })
+  }
+  // Only written when it actually changes — see `advanceStatusOnActivity`'s
+  // doc comment for why `undefined` (no advancement, or a terminal/
+  // unrecognized current status) must mean "don't touch the field" rather
+  // than being coerced into some default.
+  const nextStatus = advanceStatusOnActivity(context.currentStatus, type)
+  if (nextStatus !== undefined) contactPatch.status = nextStatus
+  batch.update(doc(db, 'contacts', id), contactPatch)
 
   // Record<string, unknown>, not typed as `Activity`, for the same reason
   // every other write payload in this file is: `serverTimestamp()`

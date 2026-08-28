@@ -18,6 +18,7 @@
  *      as an all-zero row, not be omitted.
  */
 import type { ActivityType, FirestoreTimestamp } from 'shared'
+import { WIN_ACTIVITY_TYPES } from 'shared'
 
 /** One directory entry a rep row/column is built from — `ownerId` matches
  * `Activity.ownerId`/`Opportunity.ownerId`, which are `User.authUid`
@@ -95,9 +96,13 @@ const LATER_TOUCH_BUCKET: Record<ActivityType, 'calls' | 'emails' | 'meetings' |
   'Inbound Call': 'calls',
   'Outbound Call - Talked To': 'calls',
   'Outbound Call - VM': 'calls',
+  // Replies bucket with the channel they came back on, so Total Output
+  // still reads as "volume by channel" rather than growing two new
+  // segments for what is the same conversation.
+  'Voicemail Returned': 'calls',
+  'Email Reply Received': 'emails',
   Email: 'emails',
   'Onsite Appointment': 'meetings',
-  'Seat Visit': 'meetings',
   Other: 'followUps',
 }
 
@@ -210,24 +215,80 @@ export function computeTotalOutput(
 // Widget 2: Win Rate
 // ---------------------------------------------------------------------------
 
-export interface WinRateResult {
-  wonCount: number
-  lostCount: number
-  /** `wonCount / (wonCount + lostCount)`, or `null` when both are zero —
-   * callers must render that explicitly (e.g. "—" or "No decisions yet"),
-   * never coerce to 0%, which would misleadingly read as "0% win rate"
-   * rather than "no data". */
+/**
+ * The activity types that mark a contact as having RESPONDED — imported
+ * from `shared` rather than defined here now, since it's also used by
+ * `frontend/src/lib/statusWorkflow.ts` to drive Active→Warm status
+ * advancement (a `lib/` module can't import a `features/` module in this
+ * codebase's layering, so the shared home is the one both sides can use).
+ * See its doc comment in `shared/src/constants.ts` for the full rationale.
+ */
+const WIN_ACTIVITY_TYPE_SET: ReadonlySet<ActivityType> = new Set(WIN_ACTIVITY_TYPES)
+
+export interface ContactResponseRateResult {
+  /** Distinct contacts with at least one qualifying response, ever. */
+  respondedCount: number
+  /** All contacts owned by a rep in the directory. */
+  totalCount: number
+  /** `respondedCount / totalCount`, or `null` when there are no contacts
+   * at all — callers must render that explicitly (e.g. "—"), never coerce
+   * to 0%, which would read as "nobody responds" rather than "no data". */
   rate: number | null
 }
 
-export function computeWinRate(
-  won: { id: string }[],
-  lost: { id: string }[],
-): WinRateResult {
-  const wonCount = won.length
-  const lostCount = lost.length
-  const denominator = wonCount + lostCount
-  return { wonCount, lostCount, rate: denominator === 0 ? null : wonCount / denominator }
+export interface ContactLike {
+  id: string
+  ownerId: string
+}
+
+export interface ResponseActivityLike {
+  contactId: string
+  type: ActivityType
+}
+
+/**
+ * The dashboard's "Win Rate": of every contact the team owns, what share
+ * have actually responded to outreach.
+ *
+ * Deliberately NOT period-scoped, unlike every other widget — it answers
+ * "of everyone we're responsible for, how many have ever engaged", which
+ * is a coverage question, not a this-month question. Both halves are
+ * all-time so the ratio stays internally consistent; a windowed numerator
+ * over an all-time denominator would drift toward zero as the window
+ * shrinks and read as a collapse in performance.
+ *
+ * Counts distinct CONTACTS, not activities — five replies from one
+ * prospect is one responsive contact, not five. `respondedCount` can
+ * therefore never exceed `totalCount`, including when activity exists for
+ * a contact outside the given set (deleted, merged away, or owned by
+ * someone off the directory): such activity is ignored rather than
+ * counted, which would otherwise render as a rate above 100%.
+ */
+export function computeContactResponseRate(
+  contacts: ContactLike[],
+  activities: ResponseActivityLike[],
+  reps: RepDirectoryEntry[],
+): ContactResponseRateResult {
+  const repIds = new Set(reps.map((rep) => rep.ownerId))
+  const ownedContactIds = new Set(
+    contacts.filter((contact) => repIds.has(contact.ownerId)).map((contact) => contact.id),
+  )
+
+  const responded = new Set<string>()
+  for (const activity of activities) {
+    if (!WIN_ACTIVITY_TYPE_SET.has(activity.type)) continue
+    // Only contacts actually in the denominator can count toward the
+    // numerator — see this function's doc comment.
+    if (!ownedContactIds.has(activity.contactId)) continue
+    responded.add(activity.contactId)
+  }
+
+  const totalCount = ownedContactIds.size
+  return {
+    respondedCount: responded.size,
+    totalCount,
+    rate: totalCount === 0 ? null : responded.size / totalCount,
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -241,7 +302,6 @@ const CONNECTION_TYPES: ReadonlySet<ActivityType> = new Set<ActivityType>([
   'Inbound Call',
   'Outbound Call - Talked To',
   'Onsite Appointment',
-  'Seat Visit',
 ])
 
 export interface RepConversionColumn {

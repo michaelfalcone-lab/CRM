@@ -1,0 +1,71 @@
+/* Mirrors ContactNotesPanel.module.css's list styling so the two panels
+   on the contact detail page read as siblings rather than two different
+   designs stacked together. */
+.section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.empty {
+  margin: 0;
+  color: var(--gray-500);
+  font-size: var(--font-size-small);
+}
+
+.error {
+  margin: 0;
+  color: var(--brand-red);
+  font-size: var(--font-size-small);
+}
+
+/* The permanent origin marker — muted so it reads as background context
+   (like a timestamp), never mistaken for a real, actionable log entry. */
+.addedEntry {
+  margin: 0;
+  color: var(--gray-500);
+  font-size: var(--font-size-caption);
+  font-family: var(--font-caption);
+  font-style: italic;
+}
+
+.list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.entry {
+  padding: var(--space-3);
+  border: 1px solid var(--gray-200);
+  border-radius: var(--radius-sm);
+  background: var(--brand-white);
+}
+
+.entryMeta {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.type {
+  font-weight: 600;
+  color: var(--brand-brown);
+}
+
+.timestamp {
+  font-family: var(--font-caption);
+  font-size: var(--font-size-caption);
+  color: var(--gray-600);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.note {
+  margin: var(--space-2) 0 0;
+  color: var(--gray-800);
+}

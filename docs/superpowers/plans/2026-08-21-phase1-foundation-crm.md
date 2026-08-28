@@ -64,8 +64,10 @@ These apply to every task below — copy verbatim into each dispatch, do not re-
   because it raised an unhandled error"`, immediately after the emulator logs
   `"Outgoing network have been stubbed"`. Investigated thoroughly (controller-level,
   not a task defect): reproduced independent of Node version (fails identically
-  under the system's Node 24 and under a real local Node 20 matching
-  `functions/package.json`'s `engines.node`), independent of `firebase-admin`
+  under the system's Node 24 and under a real local Node 20, which was
+  `functions/package.json`'s `engines.node` at the time of this investigation
+  — the runtime has since been bumped to 24; what matters here is that the bug
+  is version-independent, not the specific versions), independent of `firebase-admin`
   Firestore transport (`initializeFirestore(app, { preferRest: true })` does not
   fix it), and independent of port/process hygiene (reproduced with fully clean
   ports and a fresh emulator hub each time). Matches a known, long-standing class
@@ -150,7 +152,7 @@ task).
   users,statuses,opportunity-stages,duplicates,import,search}`, `src/components/ui`,
   `src/lib`, `src/styles`. Add `firebase` (client SDK) as a dependency (do not configure
   it yet — Task 5 does that).
-- `/functions`: `package.json` (Node 20 runtime, `firebase-functions`, `firebase-admin`
+- `/functions`: `package.json` (Node 24 runtime, `firebase-functions`, `firebase-admin`
   as dependencies), `tsconfig.json`, `src/index.ts` (placeholder export), directory stubs
   for `src/callable`, `src/triggers`, `src/lib`.
 - Firebase config at repo root: `firebase.json` (hosting → `frontend/dist`, functions →

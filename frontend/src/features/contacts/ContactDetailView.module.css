@@ -4,6 +4,11 @@
   gap: var(--space-4);
 }
 
+.backButton {
+  align-self: flex-start;
+  padding-left: 0;
+}
+
 .header {
   display: flex;
   align-items: flex-start;

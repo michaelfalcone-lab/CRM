@@ -13,6 +13,15 @@
   pointer-events: none;
 }
 
+.dial {
+  width: 100%;
+  max-width: 220px;
+  height: auto;
+  display: block;
+}
+
+/* The readout sits in the dial's hub; nudged below centre so it clears
+   the needle pivot rather than sitting under it. */
 .percent {
   font-family: var(--font-heading);
   font-size: 2rem;
@@ -34,25 +43,25 @@
   font-size: var(--font-size-caption);
 }
 
-.wonCount::before {
+.respondedCount::before {
   content: '';
   display: inline-block;
   width: 0.6em;
   height: 0.6em;
   border-radius: 999px;
-  background: var(--brand-brown);
+  background: var(--viz-green);
   border: 1px solid var(--brand-white);
   margin-right: 0.35em;
   vertical-align: middle;
 }
 
-.lostCount::before {
+.totalCount::before {
   content: '';
   display: inline-block;
   width: 0.6em;
   height: 0.6em;
   border-radius: 999px;
-  background: var(--brand-red);
+  background: var(--viz-mid-gray);
   border: 1px solid var(--brand-white);
   margin-right: 0.35em;
   vertical-align: middle;

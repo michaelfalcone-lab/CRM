@@ -1,10 +1,10 @@
 import { describe, expect, it } from 'vitest'
-import type { FirestoreTimestamp } from 'shared'
+import type { ActivityType, FirestoreTimestamp } from 'shared'
 import {
   computeConversionResults,
   computePipeline,
   computeTotalOutput,
-  computeWinRate,
+  computeContactResponseRate,
   unionOpportunities,
   type ActivityLike,
   type OpportunityLike,
@@ -63,15 +63,14 @@ describe('computeTotalOutput', () => {
       activity({ contactId: 'c1', ownerId: 'rep-a', type: 'Outbound Call - VM', occurredAt: ts(new Date(2026, 7, 3)) }),
       activity({ contactId: 'c1', ownerId: 'rep-a', type: 'Email', occurredAt: ts(new Date(2026, 7, 4)) }),
       activity({ contactId: 'c1', ownerId: 'rep-a', type: 'Onsite Appointment', occurredAt: ts(new Date(2026, 7, 5)) }),
-      activity({ contactId: 'c1', ownerId: 'rep-a', type: 'Seat Visit', occurredAt: ts(new Date(2026, 7, 6)) }),
     ]
     const { rows } = computeTotalOutput(activities, REPS)
     const alice = rows.find((r) => r.ownerId === 'rep-a')!
     expect(alice.initialOutreach).toBe(1)
     expect(alice.calls).toBe(2) // Inbound Call + Outbound Call - VM
     expect(alice.emails).toBe(1)
-    expect(alice.meetings).toBe(2) // Onsite Appointment + Seat Visit
-    expect(alice.total).toBe(6)
+    expect(alice.meetings).toBe(1) // Onsite Appointment
+    expect(alice.total).toBe(5)
   })
 
   it('a rep with zero activities in the period renders as an all-zero row, not omitted', () => {
@@ -170,26 +169,111 @@ describe('computeTotalOutput', () => {
   })
 })
 
-describe('computeWinRate', () => {
-  it('handles the zero-denominator case explicitly (null, not 0 or NaN)', () => {
-    const result = computeWinRate([], [])
-    expect(result).toEqual({ wonCount: 0, lostCount: 0, rate: null })
+describe('computeContactResponseRate', () => {
+  const REPS_CR: RepDirectoryEntry[] = [
+    { ownerId: 'rep-a', displayName: 'Alice' },
+    { ownerId: 'rep-b', displayName: 'Bob' },
+  ]
+  const owned = (id: string, ownerId = 'rep-a') => ({ id, ownerId })
+  const act = (contactId: string, type: ActivityType) => ({ contactId, type })
+
+  it('returns a null rate (not 0, not NaN) when there are no contacts at all', () => {
+    const result = computeContactResponseRate([], [], REPS_CR)
+    expect(result).toEqual({ respondedCount: 0, totalCount: 0, rate: null })
   })
 
-  it('computes wonCount / (wonCount + lostCount)', () => {
-    const result = computeWinRate(
-      [{ id: 'o1' }, { id: 'o2' }, { id: 'o3' }],
-      [{ id: 'o4' }],
+  it('counts a contact as responded once it has an inbound call', () => {
+    const result = computeContactResponseRate(
+      [owned('c1'), owned('c2')],
+      [act('c1', 'Inbound Call')],
+      REPS_CR,
     )
-    expect(result).toEqual({ wonCount: 3, lostCount: 1, rate: 0.75 })
+    expect(result).toEqual({ respondedCount: 1, totalCount: 2, rate: 0.5 })
   })
 
-  it('all-lost gives rate 0 (a real number, distinct from the null no-data case)', () => {
-    expect(computeWinRate([], [{ id: 'o1' }])).toEqual({ wonCount: 0, lostCount: 1, rate: 0 })
+  it('does NOT count an outbound email that has no reply logged against it', () => {
+    const result = computeContactResponseRate([owned('c1')], [act('c1', 'Email')], REPS_CR)
+    expect(result).toEqual({ respondedCount: 0, totalCount: 1, rate: 0 })
   })
 
-  it('all-won gives rate 1', () => {
-    expect(computeWinRate([{ id: 'o1' }], [])).toEqual({ wonCount: 1, lostCount: 0, rate: 1 })
+  it('does NOT count a voicemail left with no callback logged', () => {
+    const result = computeContactResponseRate(
+      [owned('c1')],
+      [act('c1', 'Outbound Call - VM')],
+      REPS_CR,
+    )
+    expect(result.respondedCount).toBe(0)
+  })
+
+  it('counts the contact once the emailed prospect replies', () => {
+    // The workflow this metric exists for: the outbound touch alone is not
+    // a win; logging the reply later is what converts it.
+    const result = computeContactResponseRate(
+      [owned('c1')],
+      [act('c1', 'Email'), act('c1', 'Email Reply Received')],
+      REPS_CR,
+    )
+    expect(result).toEqual({ respondedCount: 1, totalCount: 1, rate: 1 })
+  })
+
+  it('counts the contact once a voicemail is returned', () => {
+    const result = computeContactResponseRate(
+      [owned('c1')],
+      [act('c1', 'Outbound Call - VM'), act('c1', 'Voicemail Returned')],
+      REPS_CR,
+    )
+    expect(result.respondedCount).toBe(1)
+  })
+
+  it('counts a contact only once no matter how many qualifying replies it has', () => {
+    const result = computeContactResponseRate(
+      [owned('c1')],
+      [
+        act('c1', 'Inbound Call'),
+        act('c1', 'Email Reply Received'),
+        act('c1', 'Outbound Call - Talked To'),
+      ],
+      REPS_CR,
+    )
+    expect(result).toEqual({ respondedCount: 1, totalCount: 1, rate: 1 })
+  })
+
+  it('does not count in-person activity types, which are out of scope for this build', () => {
+    const result = computeContactResponseRate(
+      [owned('c1')],
+      [act('c1', 'Onsite Appointment')],
+      REPS_CR,
+    )
+    expect(result.respondedCount).toBe(0)
+  })
+
+  it('ignores activity for a contact that is not in the contact set', () => {
+    // A stale/orphaned activity must never push respondedCount above
+    // totalCount, which would render as a rate over 100%.
+    const result = computeContactResponseRate(
+      [owned('c1')],
+      [act('c1', 'Inbound Call'), act('ghost', 'Inbound Call')],
+      REPS_CR,
+    )
+    expect(result).toEqual({ respondedCount: 1, totalCount: 1, rate: 1 })
+  })
+
+  it('excludes contacts owned by someone outside the rep directory', () => {
+    const result = computeContactResponseRate(
+      [owned('c1', 'rep-a'), owned('c2', 'not-a-listed-rep')],
+      [act('c1', 'Inbound Call')],
+      REPS_CR,
+    )
+    expect(result).toEqual({ respondedCount: 1, totalCount: 1, rate: 1 })
+  })
+
+  it('counts contacts across every rep in the directory, not just one', () => {
+    const result = computeContactResponseRate(
+      [owned('c1', 'rep-a'), owned('c2', 'rep-b'), owned('c3', 'rep-b')],
+      [act('c2', 'Inbound Call')],
+      REPS_CR,
+    )
+    expect(result).toEqual({ respondedCount: 1, totalCount: 3, rate: 1 / 3 })
   })
 })
 
@@ -209,14 +293,13 @@ describe('computeConversionResults', () => {
       activity({ contactId: 'c1', ownerId: 'rep-a', type: 'Inbound Call', occurredAt: ts(new Date(2026, 7, 1)) }),
       activity({ contactId: 'c2', ownerId: 'rep-a', type: 'Outbound Call - Talked To', occurredAt: ts(new Date(2026, 7, 1)) }),
       activity({ contactId: 'c3', ownerId: 'rep-a', type: 'Onsite Appointment', occurredAt: ts(new Date(2026, 7, 1)) }),
-      activity({ contactId: 'c4', ownerId: 'rep-a', type: 'Seat Visit', occurredAt: ts(new Date(2026, 7, 1)) }),
       // Not connections — an attempt (VM), a one-way channel (Email), or the catch-all (Other).
       activity({ contactId: 'c5', ownerId: 'rep-a', type: 'Outbound Call - VM', occurredAt: ts(new Date(2026, 7, 1)) }),
       activity({ contactId: 'c6', ownerId: 'rep-a', type: 'Email', occurredAt: ts(new Date(2026, 7, 1)) }),
       activity({ contactId: 'c7', ownerId: 'rep-a', type: 'Other', occurredAt: ts(new Date(2026, 7, 1)) }),
     ]
     const { columns } = computeConversionResults(activities, [], [], REPS)
-    expect(columns.find((c) => c.ownerId === 'rep-a')!.connections).toBe(4)
+    expect(columns.find((c) => c.ownerId === 'rep-a')!.connections).toBe(3)
   })
 
   it('Conversion Rate handles the zero-created case explicitly (null)', () => {

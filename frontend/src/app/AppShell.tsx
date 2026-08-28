@@ -23,12 +23,25 @@ const NAV_ITEMS: NavItem[] = [
   { to: '/duplicates', label: 'Duplicates' },
 ]
 
-/** Rendered only for `role === 'admin'`, per the brief. */
-const ADMIN_NAV_ITEMS: NavItem[] = [
-  { to: '/users', label: 'Users' },
-  { to: '/statuses', label: 'Statuses' },
-  { to: '/opportunity-stages', label: 'Opportunity Stages' },
-]
+/**
+ * The Admin section is intentionally NOT rendered in the sidebar right
+ * now. `/users`, `/statuses`, and `/opportunity-stages` are still real,
+ * still `RequireAdmin`-guarded routes, but every one of them is a
+ * placeholder page — linking to them put three dead ends in an admin's
+ * nav. Hidden rather than deleted so restoring them is a one-line change
+ * once they do something: uncomment this list and the block that renders
+ * it in the nav below.
+ *
+ * Statuses in particular is unlikely to come back as an editable page at
+ * all — the 5-value workflow is now driven by hardcoded ids in
+ * `lib/statusWorkflow.ts`, so an admin editing them freely would break
+ * the automation rather than configure it.
+ */
+// const ADMIN_NAV_ITEMS: NavItem[] = [
+//   { to: '/users', label: 'Users' },
+//   { to: '/statuses', label: 'Statuses' },
+//   { to: '/opportunity-stages', label: 'Opportunity Stages' },
+// ]
 
 function navLinkClassName({ isActive }: { isActive: boolean }): string {
   return [styles.navLink, isActive ? styles.navLinkActive : ''].filter(Boolean).join(' ')
@@ -36,14 +49,14 @@ function navLinkClassName({ isActive }: { isActive: boolean }): string {
 
 /**
  * App chrome rendered once `AuthProvider`'s status is `'ready'`: a left
- * sidebar nav (admin items conditionally shown by role) and a top bar with
+ * sidebar nav (identical for every role — the Admin section is currently
+ * hidden, see `ADMIN_NAV_ITEMS`) and a top bar with
  * an always-visible global search box (`GlobalSearch`, Task 10 — per the
  * simplicity bar it must never be click-to-reveal) and a profile element
  * sourced from `useCurrentUser()`.
  */
 export function AppShell() {
   const { user, signOutUser } = useCurrentUser()
-  const isAdmin = user?.role === 'admin'
 
   return (
     <div className={styles.shell}>
@@ -55,16 +68,7 @@ export function AppShell() {
               {item.label}
             </NavLink>
           ))}
-          {isAdmin && (
-            <>
-              <div className={styles.navSectionLabel}>Admin</div>
-              {ADMIN_NAV_ITEMS.map((item) => (
-                <NavLink key={item.to} to={item.to} className={navLinkClassName}>
-                  {item.label}
-                </NavLink>
-              ))}
-            </>
-          )}
+          {/* Admin section hidden — see ADMIN_NAV_ITEMS above. */}
         </nav>
       </aside>
 

@@ -38,6 +38,8 @@ vi.mock('../../lib', () => ({
     loading: false,
   }),
   useOpportunityStages: () => ({ stages: [], loading: false }),
+  // The Win Rate widget's denominator — all owned contacts, all time.
+  useContacts: () => ({ contacts: [], loading: false, error: null }),
 }))
 
 vi.mock('./useDashboardData', () => ({
@@ -65,6 +67,7 @@ function emptyData() {
     opportunitiesCreated: [],
     opportunitiesWon: [],
     opportunitiesLost: [],
+    responseActivities: [],
     loading: false,
     error: null,
   }

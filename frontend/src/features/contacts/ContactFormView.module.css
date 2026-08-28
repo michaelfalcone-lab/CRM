@@ -22,3 +22,10 @@
   font-size: var(--font-size-caption);
   color: var(--color-danger-text);
 }
+
+.fieldHint {
+  margin: calc(-1 * var(--space-2)) 0 0;
+  font-family: var(--font-caption);
+  font-size: var(--font-size-caption);
+  color: var(--gray-500);
+}

@@ -60,7 +60,12 @@ describe('AppShell', () => {
     expect(screen.queryByRole('link', { name: 'Opportunity Stages' })).not.toBeInTheDocument()
   })
 
-  it('shows the admin-only nav items for an admin user', () => {
+  it('hides the Admin nav section even for an admin — those pages are still placeholders', () => {
+    // Previously these three links rendered for an admin. They're hidden
+    // now (see `ADMIN_NAV_ITEMS` in AppShell.tsx): every one of them is a
+    // placeholder page, so linking them put three dead ends in the nav.
+    // The routes themselves still exist and are still RequireAdmin-guarded
+    // — this is a nav-visibility change only, not a removal.
     useCurrentUserMock.mockReturnValue({
       user: {
         displayName: 'Alex Admin',
@@ -75,9 +80,12 @@ describe('AppShell', () => {
     })
     renderShell()
 
-    expect(screen.getByRole('link', { name: 'Users' })).toBeInTheDocument()
-    expect(screen.getByRole('link', { name: 'Statuses' })).toBeInTheDocument()
-    expect(screen.getByRole('link', { name: 'Opportunity Stages' })).toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: 'Users' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: 'Statuses' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: 'Opportunity Stages' })).not.toBeInTheDocument()
+    expect(screen.queryByText('Admin')).not.toBeInTheDocument()
+    // The non-admin nav is unchanged and still fully present.
     expect(screen.getByRole('link', { name: 'Duplicates' })).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'Contacts' })).toBeInTheDocument()
   })
 })

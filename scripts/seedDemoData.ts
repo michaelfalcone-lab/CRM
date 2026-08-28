@@ -60,11 +60,21 @@ const STAGES = [
   { id: 'won', label: 'Won', order: 5, color: 'success', isWon: true },
 ] as const
 
+/**
+ * The automated status workflow (New Lead -> Active -> Warm -> Win/Dead) —
+ * full replacement of the earlier 4-value set (New Lead/Active/Past
+ * Customer/Do Not Contact). `id`s are load-bearing: `advanceStatusOnActivity`
+ * (`frontend/src/lib/statusWorkflow.ts`) and `updateOpportunity`'s Win/Dead
+ * sync both hardcode these exact ids ('new-lead'/'active'/'warm'/'win'/
+ * 'dead'), matching the same "hardcoded ids, not admin-configurable" pattern
+ * `opportunityStages`' isWon/isLost flags already use for the same reason.
+ */
 const STATUSES = [
   { id: 'new-lead', label: 'New Lead', order: 1, color: 'info' },
-  { id: 'active', label: 'Active', order: 2, color: 'success' },
-  { id: 'past-customer', label: 'Past Customer', order: 3, color: 'neutral' },
-  { id: 'do-not-contact', label: 'Do Not Contact', order: 4, color: 'danger' },
+  { id: 'active', label: 'Active', order: 2, color: 'primary' },
+  { id: 'warm', label: 'Warm', order: 3, color: 'warning' },
+  { id: 'win', label: 'Win', order: 4, color: 'success' },
+  { id: 'dead', label: 'Dead', order: 5, color: 'danger' },
 ]
 
 const ORGS = [
@@ -101,15 +111,26 @@ interface DemoContact {
   mode?: string
 }
 
+// Statuses below are set to match what the real automated workflow
+// (`advanceStatusOnActivity` + `updateOpportunity`'s Win/Dead sync) would
+// actually produce for each contact, given the activities and opportunity
+// outcomes this file seeds for them below — not just a renamed copy of the
+// old 4-value set. Specifically: c-01/c-02/c-03 have a Won opportunity
+// (`OPPS` below) -> 'win'; c-04/c-07 have a Lost opportunity and no Won
+// one -> 'dead' (c-07's Lost beats the response activity it also has —
+// only Win is protected from a later Lost, per the tie-break rule); c-06/
+// c-08 have a seeded response-type activity and no won/lost opportunity ->
+// 'warm'; c-05 has been contacted (lastDays/mode set) but hasn't responded
+// or closed -> 'active'; c-09/c-10 have no activity at all -> 'new-lead'.
 const CONTACTS: DemoContact[] = [
-  { id: 'c-01', first: 'Marcus', last: 'Bell', email: 'mbell@example.com', phone: '4015550101', org: 'org-acme', owner: 'uid-michael', status: 'active', lastDays: 2, mode: 'Phone' },
-  { id: 'c-02', first: 'Priya', last: 'Raman', email: 'praman@example.com', phone: '4015550102', org: 'org-acme', owner: 'uid-michael', status: 'active', lastDays: 5, mode: 'Email' },
-  { id: 'c-03', first: 'Tom', last: 'Delgado', email: 'tdelgado@example.com', org: 'org-hoyt', owner: 'uid-jordan', status: 'new-lead', lastDays: 1, mode: 'Phone' },
-  { id: 'c-04', first: 'Susan', last: 'Chen', email: 'schen@example.com', phone: '4015550104', org: 'org-hoyt', owner: 'uid-jordan', status: 'active', lastDays: 9, mode: 'In-Person' },
-  { id: 'c-05', first: 'Andre', last: 'Whitlock', email: 'awhitlock@example.com', owner: 'uid-michael', status: 'new-lead', lastDays: 14, mode: 'Email' },
-  { id: 'c-06', first: 'Grace', last: 'Nakamura', email: 'gnakamura@example.com', phone: '4015550106', org: 'org-eastside', owner: 'uid-michael', status: 'active', lastDays: 3, mode: 'Phone' },
-  { id: 'c-07', first: 'Devin', last: 'Cross', email: 'dcross@example.com', owner: 'uid-jordan', status: 'past-customer', lastDays: 45, mode: 'Email' },
-  { id: 'c-08', first: 'Lena', last: 'Moreau', email: 'lmoreau@example.com', phone: '4015550108', owner: 'uid-jordan', status: 'new-lead', lastDays: 7, mode: 'Phone' },
+  { id: 'c-01', first: 'Marcus', last: 'Bell', email: 'mbell@example.com', phone: '4015550101', org: 'org-acme', owner: 'uid-michael', status: 'win', lastDays: 2, mode: 'Phone' },
+  { id: 'c-02', first: 'Priya', last: 'Raman', email: 'praman@example.com', phone: '4015550102', org: 'org-acme', owner: 'uid-michael', status: 'win', lastDays: 5, mode: 'Email' },
+  { id: 'c-03', first: 'Tom', last: 'Delgado', email: 'tdelgado@example.com', org: 'org-hoyt', owner: 'uid-jordan', status: 'win', lastDays: 1, mode: 'Phone' },
+  { id: 'c-04', first: 'Susan', last: 'Chen', email: 'schen@example.com', phone: '4015550104', org: 'org-hoyt', owner: 'uid-jordan', status: 'dead', lastDays: 9, mode: 'In-Person' },
+  { id: 'c-05', first: 'Andre', last: 'Whitlock', email: 'awhitlock@example.com', owner: 'uid-michael', status: 'active', lastDays: 14, mode: 'Email' },
+  { id: 'c-06', first: 'Grace', last: 'Nakamura', email: 'gnakamura@example.com', phone: '4015550106', org: 'org-eastside', owner: 'uid-michael', status: 'warm', lastDays: 3, mode: 'Phone' },
+  { id: 'c-07', first: 'Devin', last: 'Cross', email: 'dcross@example.com', owner: 'uid-jordan', status: 'dead', lastDays: 45, mode: 'Email' },
+  { id: 'c-08', first: 'Lena', last: 'Moreau', email: 'lmoreau@example.com', phone: '4015550108', owner: 'uid-jordan', status: 'warm', lastDays: 7, mode: 'Phone' },
   // Never contacted — sorts to the top of the Contacts list (oldest-first).
   { id: 'c-09', first: 'Owen', last: 'Fitzgerald', email: 'ofitz@example.com', owner: 'uid-michael', status: 'new-lead' },
   { id: 'c-10', first: 'Renee', last: 'Alvarez', email: 'ralvarez@example.com', owner: 'uid-jordan', status: 'new-lead' },
@@ -158,13 +179,27 @@ const LOST_REASONS: Record<string, string> = { 'o-07': 'Cost', 'o-09': 'Past Poo
  * for each contact within a period becomes "Initial Outreach" on the
  * dashboard; the rest bucket by method — so each contact gets several. */
 const ACTIVITY_TYPES = [
-  'Outbound Call - Talked To',
   'Outbound Call - VM',
   'Email',
-  'Inbound Call',
   'Onsite Appointment',
-  'Seat Visit',
   'Other',
+] as const
+
+/**
+ * Types that mark a contact as having RESPONDED (mirrors
+ * `WIN_ACTIVITY_TYPES` in the dashboard's `aggregations.ts`). Held apart
+ * from `ACTIVITY_TYPES` above deliberately: if every contact's cycled
+ * activity mix included a response type, every contact would count as
+ * responded and the Win Rate gauge would seed at ~100%, demoing nothing.
+ * Only the subset selected below gets one, so the gauge shows a realistic
+ * partial rate and the attempt-vs-response distinction is actually
+ * visible on the contact log.
+ */
+const RESPONSE_TYPES = [
+  'Inbound Call',
+  'Outbound Call - Talked To',
+  'Email Reply Received',
+  'Voicemail Returned',
 ] as const
 
 /**
@@ -367,6 +402,23 @@ async function main() {
         contactName: `${c.first} ${c.last}`,
         organizationId: c.org ?? null,
         type,
+        ownerId: c.owner,
+        occurredAt: when,
+        createdAt: when,
+        createdBy: c.owner,
+      })
+    }
+
+    // Roughly 3 in 5 contacts have responded, so the Win Rate gauge seeds
+    // at a believable partial value rather than 0% or 100%.
+    if (n % 5 < 3) {
+      const responseType = RESPONSE_TYPES[n % RESPONSE_TYPES.length]!
+      const when = daysAgo(Math.max(1, (c.lastDays ?? 20) - 2))
+      batch.set(db.collection('activities').doc(`a-${c.id}-response`), {
+        contactId: c.id,
+        contactName: `${c.first} ${c.last}`,
+        organizationId: c.org ?? null,
+        type: responseType,
         ownerId: c.owner,
         occurredAt: when,
         createdAt: when,

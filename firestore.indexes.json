@@ -4,121 +4,228 @@
       "collectionGroup": "contacts",
       "queryScope": "COLLECTION",
       "fields": [
-        { "fieldPath": "ownerId", "order": "ASCENDING" },
-        { "fieldPath": "status", "order": "ASCENDING" }
+        {
+          "fieldPath": "ownerId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "status",
+          "order": "ASCENDING"
+        }
       ]
     },
     {
       "collectionGroup": "contacts",
       "queryScope": "COLLECTION",
       "fields": [
-        { "fieldPath": "status", "order": "ASCENDING" },
-        { "fieldPath": "updatedAt", "order": "DESCENDING" }
+        {
+          "fieldPath": "status",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "updatedAt",
+          "order": "DESCENDING"
+        }
       ]
     },
     {
       "collectionGroup": "contacts",
       "queryScope": "COLLECTION",
       "fields": [
-        { "fieldPath": "organizationId", "order": "ASCENDING" },
-        { "fieldPath": "lastName", "order": "ASCENDING" }
+        {
+          "fieldPath": "organizationId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "lastName",
+          "order": "ASCENDING"
+        }
       ]
     },
     {
       "collectionGroup": "contacts",
       "queryScope": "COLLECTION",
       "fields": [
-        { "fieldPath": "ownerId", "order": "ASCENDING" },
-        { "fieldPath": "lastName", "order": "ASCENDING" }
+        {
+          "fieldPath": "ownerId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "lastName",
+          "order": "ASCENDING"
+        }
       ]
     },
     {
       "collectionGroup": "contacts",
       "queryScope": "COLLECTION",
       "fields": [
-        { "fieldPath": "status", "order": "ASCENDING" },
-        { "fieldPath": "lastName", "order": "ASCENDING" }
+        {
+          "fieldPath": "status",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "lastName",
+          "order": "ASCENDING"
+        }
       ]
     },
     {
       "collectionGroup": "contacts",
       "queryScope": "COLLECTION",
       "fields": [
-        { "fieldPath": "ownerId", "order": "ASCENDING" },
-        { "fieldPath": "status", "order": "ASCENDING" },
-        { "fieldPath": "lastName", "order": "ASCENDING" }
+        {
+          "fieldPath": "ownerId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "status",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "lastName",
+          "order": "ASCENDING"
+        }
       ]
     },
     {
       "collectionGroup": "contacts",
       "queryScope": "COLLECTION",
       "fields": [
-        { "fieldPath": "importBatchId", "order": "ASCENDING" },
-        { "fieldPath": "createdAt", "order": "ASCENDING" }
+        {
+          "fieldPath": "importBatchId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "createdAt",
+          "order": "ASCENDING"
+        }
       ]
     },
     {
       "collectionGroup": "contacts",
       "queryScope": "COLLECTION",
       "fields": [
-        { "fieldPath": "duplicateReviewStatus", "order": "ASCENDING" },
-        { "fieldPath": "createdAt", "order": "DESCENDING" }
+        {
+          "fieldPath": "duplicateReviewStatus",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "createdAt",
+          "order": "DESCENDING"
+        }
       ]
     },
     {
       "collectionGroup": "contacts",
       "queryScope": "COLLECTION",
       "fields": [
-        { "fieldPath": "mergedInto", "order": "ASCENDING" },
-        { "fieldPath": "nameLower", "order": "ASCENDING" }
+        {
+          "fieldPath": "mergedInto",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "nameLower",
+          "order": "ASCENDING"
+        }
       ]
     },
     {
       "collectionGroup": "contacts",
       "queryScope": "COLLECTION",
       "fields": [
-        { "fieldPath": "mergedInto", "order": "ASCENDING" },
-        { "fieldPath": "searchTokens", "arrayConfig": "CONTAINS" }
+        {
+          "fieldPath": "mergedInto",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "searchTokens",
+          "arrayConfig": "CONTAINS"
+        }
       ]
     },
     {
       "collectionGroup": "organizations",
       "queryScope": "COLLECTION",
       "fields": [
-        { "fieldPath": "mergedInto", "order": "ASCENDING" },
-        { "fieldPath": "nameLower", "order": "ASCENDING" }
+        {
+          "fieldPath": "mergedInto",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "nameLower",
+          "order": "ASCENDING"
+        }
       ]
     },
     {
       "collectionGroup": "organizations",
       "queryScope": "COLLECTION",
       "fields": [
-        { "fieldPath": "mergedInto", "order": "ASCENDING" },
-        { "fieldPath": "searchTokens", "arrayConfig": "CONTAINS" }
+        {
+          "fieldPath": "mergedInto",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "searchTokens",
+          "arrayConfig": "CONTAINS"
+        }
       ]
     },
     {
       "collectionGroup": "opportunities",
       "queryScope": "COLLECTION",
       "fields": [
-        { "fieldPath": "contactId", "order": "ASCENDING" },
-        { "fieldPath": "updatedAt", "order": "DESCENDING" }
+        {
+          "fieldPath": "contactId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "updatedAt",
+          "order": "DESCENDING"
+        }
       ]
     },
     {
       "collectionGroup": "opportunities",
       "queryScope": "COLLECTION",
       "fields": [
-        { "fieldPath": "stage", "order": "ASCENDING" },
-        { "fieldPath": "sport", "order": "ASCENDING" }
+        {
+          "fieldPath": "stage",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "sport",
+          "order": "ASCENDING"
+        }
       ]
     },
     {
       "collectionGroup": "opportunities",
       "queryScope": "COLLECTION",
       "fields": [
-        { "fieldPath": "organizationId", "order": "ASCENDING" },
-        { "fieldPath": "updatedAt", "order": "DESCENDING" }
+        {
+          "fieldPath": "organizationId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "updatedAt",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "activities",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "contactId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "occurredAt",
+          "order": "DESCENDING"
+        }
       ]
     }
   ],

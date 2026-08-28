@@ -17,17 +17,29 @@ import type { Opportunity, OpportunityStage } from 'shared'
 import type { WithId } from '../firestoreTypes'
 
 let currentOpportunity: Opportunity
+/** `undefined` simulates the linked contact not existing (defensive case —
+ * see the "contact was deleted" tests below); otherwise a `status` only,
+ * since that's all this file's contact-sync logic reads. */
+let currentContact: { status?: string } | undefined
 
 const addDocMock = vi.fn(async (...args: unknown[]) => {
   void args
   return { id: 'new-opp-1' }
 })
 const docMock = vi.fn((...args: unknown[]) => ({ __doc: args.slice(1) }))
+/** Ref-aware: `doc(db, 'opportunities', id)` and `doc(db, 'contacts', id)`
+ * both go through the same `tx.get`, so the fixture returned has to key
+ * off which collection the ref actually points at (`ref.__doc[0]`, per
+ * `docMock`'s own shape above) rather than assuming a fixed call order. */
 const txGetMock = vi.fn(
-  async (): Promise<{ exists: () => boolean; data: () => Opportunity | undefined }> => ({
-    exists: () => true,
-    data: () => currentOpportunity,
-  }),
+  async (
+    ref: { __doc: [string, string] },
+  ): Promise<{ exists: () => boolean; data: () => unknown }> => {
+    if (ref.__doc[0] === 'contacts') {
+      return { exists: () => currentContact !== undefined, data: () => currentContact }
+    }
+    return { exists: () => true, data: () => currentOpportunity }
+  },
 )
 const txUpdateMock = vi.fn()
 const runTransactionMock = vi.fn(async (_db: unknown, updater: (tx: unknown) => Promise<void>) => {
@@ -93,6 +105,7 @@ function baseOpportunity(overrides: Partial<Opportunity> = {}): Opportunity {
 beforeEach(() => {
   vi.clearAllMocks()
   currentOpportunity = baseOpportunity()
+  currentContact = { status: 'warm' }
 })
 
 describe('updateOpportunity — wonAt/lostAt transitions', () => {
@@ -208,12 +221,16 @@ describe('updateOpportunity — wonAt/lostAt transitions', () => {
   })
 
   it('reads the current stage from the transaction, not from any client-cached value', async () => {
-    // Even though nothing in the patch mentions the contact's real current
-    // stage, the transition must be computed from what tx.get() returns.
+    // Even though nothing in the patch mentions the opportunity's real
+    // current stage, the transition must be computed from what tx.get()
+    // returns.
     currentOpportunity = baseOpportunity({ stage: 'won', wonAt: { seconds: 1000, nanoseconds: 0 } })
     await updateOpportunity('opp-1', { stage: 'lost' }, STAGES)
 
-    expect(txGetMock).toHaveBeenCalledTimes(1)
+    // Two reads: the opportunity itself, plus the linked contact — this
+    // transition newly stamps lostAt, which also evaluates the contact's
+    // Win/Dead sync (see the "contact status sync" describe block below).
+    expect(txGetMock).toHaveBeenCalledTimes(2)
     const patch = txUpdateMock.mock.calls[0]![1] as Record<string, unknown>
     // Moving Won -> Lost: wonAt clears, lostAt stamps.
     expect(patch.wonAt).toEqual({ __deleteField: true })
@@ -255,6 +272,92 @@ describe('updateOpportunity — wonAt/lostAt transitions', () => {
     const patch = txUpdateMock.mock.calls[0]![1] as Record<string, unknown>
     expect(patch.lostAt).toEqual({ __deleteField: true })
     expect(patch.lostReason).toEqual({ __deleteField: true })
+  })
+})
+
+/** The linked contact's update, if one happened — asserts against
+ * whichever `tx.update` call targeted the `contacts` ref (not necessarily
+ * index 1, though it always is today since the opportunity update is
+ * always first). Returns `undefined` if no contact update occurred. */
+function contactUpdatePatch(): Record<string, unknown> | undefined {
+  const call = txUpdateMock.mock.calls.find(
+    (c) => (c[0] as { __doc: [string, string] }).__doc[0] === 'contacts',
+  )
+  return call?.[1] as Record<string, unknown> | undefined
+}
+
+describe('updateOpportunity — contact status sync (Win/Dead)', () => {
+  it('sets the linked contact to win when the opportunity transitions into a Won stage', async () => {
+    currentOpportunity = baseOpportunity({ stage: 'verbal-commit' })
+    currentContact = { status: 'warm' }
+
+    await updateOpportunity('opp-1', { stage: 'won' }, STAGES)
+
+    expect(contactUpdatePatch()).toMatchObject({ status: 'win' })
+  })
+
+  it('sets the linked contact to dead when the opportunity transitions into a Lost stage', async () => {
+    currentOpportunity = baseOpportunity({ stage: 'in-conversation' })
+    currentContact = { status: 'active' }
+
+    await updateOpportunity('opp-1', { stage: 'lost' }, STAGES)
+
+    expect(contactUpdatePatch()).toMatchObject({ status: 'dead' })
+  })
+
+  it('does NOT demote an already-Win contact to Dead when a different opportunity for the same contact is lost', async () => {
+    // The confirmed tie-break: a contact who converted on one sport keeps
+    // that status even if a separate pitch for another sport falls through.
+    currentOpportunity = baseOpportunity({ stage: 'in-conversation' })
+    currentContact = { status: 'win' }
+
+    await updateOpportunity('opp-1', { stage: 'lost' }, STAGES)
+
+    expect(contactUpdatePatch()).toBeUndefined()
+  })
+
+  it('sets Win even over an existing Dead status from a different opportunity for the same contact', async () => {
+    currentOpportunity = baseOpportunity({ stage: 'in-conversation' })
+    currentContact = { status: 'dead' }
+
+    await updateOpportunity('opp-1', { stage: 'won' }, STAGES)
+
+    expect(contactUpdatePatch()).toMatchObject({ status: 'win' })
+  })
+
+  it('does not touch the contact at all when the stage change is not into Won or Lost', async () => {
+    currentOpportunity = baseOpportunity({ stage: 'created' })
+
+    await updateOpportunity('opp-1', { stage: 'in-conversation' }, STAGES)
+
+    expect(contactUpdatePatch()).toBeUndefined()
+  })
+
+  it('does not touch the contact when re-saving an already-Won opportunity (no fresh transition)', async () => {
+    currentOpportunity = baseOpportunity({ stage: 'won', wonAt: { seconds: 1000, nanoseconds: 0 } })
+
+    await updateOpportunity('opp-1', { note: 'tweak' }, STAGES)
+
+    expect(contactUpdatePatch()).toBeUndefined()
+  })
+
+  it('does not touch the contact when an opportunity is reopened out of Won/Lost back to an open stage', async () => {
+    currentOpportunity = baseOpportunity({ stage: 'won', wonAt: { seconds: 1000, nanoseconds: 0 } })
+
+    await updateOpportunity('opp-1', { stage: 'verbal-commit' }, STAGES)
+
+    // Reopening clears wonAt on the OPPORTUNITY, but must not reach into
+    // the contact at all — demoting a contact off Win/Dead is out of
+    // scope; those are set only by a fresh transition into Won/Lost.
+    expect(contactUpdatePatch()).toBeUndefined()
+  })
+
+  it('does not throw and does not update anything if the linked contact no longer exists', async () => {
+    currentOpportunity = baseOpportunity({ stage: 'verbal-commit' })
+    currentContact = undefined
+
+    await expect(updateOpportunity('opp-1', { stage: 'won' }, STAGES)).resolves.toBeUndefined()
+    expect(contactUpdatePatch()).toBeUndefined()
   })
 })
 

@@ -7,9 +7,13 @@
 import { describe, expect, it } from 'vitest'
 import type { Contact } from 'shared'
 import type { WithId } from '../../lib/firestoreTypes'
-import { sortByLastContactedFirst } from './ContactListView'
+import { sortContacts, sortByLastContactedFirst } from './ContactListView'
 
-function contact(id: string, lastContactSeconds?: number): WithId<Contact> {
+function contact(
+  id: string,
+  lastContactSeconds?: number,
+  overrides: Partial<Contact> = {},
+): WithId<Contact> {
   return {
     id,
     firstName: 'F',
@@ -30,6 +34,7 @@ function contact(id: string, lastContactSeconds?: number): WithId<Contact> {
     ...(lastContactSeconds !== undefined
       ? { lastContactDate: { seconds: lastContactSeconds, nanoseconds: 0 } }
       : {}),
+    ...overrides,
   }
 }
 
@@ -67,5 +72,67 @@ describe('sortByLastContactedFirst', () => {
     const sorted = sortByLastContactedFirst([dated, never1, never2])
     expect(sorted.map((c) => c.id).slice(0, 2).sort()).toEqual(['never1', 'never2'])
     expect(sorted[2]!.id).toBe('dated')
+  })
+})
+
+describe('sortContacts', () => {
+  const zeta = contact('zeta', 100, { firstName: 'Zoe', lastName: 'Zeta' })
+  const alpha = contact('alpha', 200, { firstName: 'Amy', lastName: 'Alpha' })
+  const mid = contact('mid', 300, { firstName: 'Mo', lastName: 'Mid' })
+
+  it('sorts by name ascending on last name, then first', () => {
+    const sorted = sortContacts([zeta, mid, alpha], 'name', 'asc')
+    expect(sorted.map((c) => c.id)).toEqual(['alpha', 'mid', 'zeta'])
+  })
+
+  it('reverses on descending', () => {
+    const sorted = sortContacts([alpha, mid, zeta], 'name', 'desc')
+    expect(sorted.map((c) => c.id)).toEqual(['zeta', 'mid', 'alpha'])
+  })
+
+  it('sorts by organization name, putting contacts with no organization last regardless of direction', () => {
+    // A blank isn't "before A" or "after Z" — it's absent. Sorting it into
+    // the alphabet either way would bury real organizations behind a wall
+    // of dashes on one of the two directions.
+    const withOrg = contact('a', 1, { organizationId: 'o1', organizationName: 'Acme' })
+    const noOrg = contact('b', 2, { organizationId: null })
+    const otherOrg = contact('c', 3, { organizationId: 'o2', organizationName: 'Zenith' })
+
+    expect(sortContacts([noOrg, otherOrg, withOrg], 'organization', 'asc').map((c) => c.id)).toEqual([
+      'a',
+      'c',
+      'b',
+    ])
+    expect(sortContacts([noOrg, otherOrg, withOrg], 'organization', 'desc').map((c) => c.id)).toEqual([
+      'c',
+      'a',
+      'b',
+    ])
+  })
+
+  it('sorts by status, putting contacts with no status last regardless of direction', () => {
+    const active = contact('a', 1, { status: 'active' })
+    const none = contact('b', 2)
+    const warm = contact('c', 3, { status: 'warm' })
+
+    expect(sortContacts([none, warm, active], 'status', 'asc').map((c) => c.id)).toEqual(['a', 'c', 'b'])
+    expect(sortContacts([none, warm, active], 'status', 'desc').map((c) => c.id)).toEqual(['c', 'a', 'b'])
+  })
+
+  it('sorts by owner id', () => {
+    const a = contact('a', 1, { ownerId: 'uid-aaa' })
+    const b = contact('b', 2, { ownerId: 'uid-zzz' })
+    expect(sortContacts([b, a], 'owner', 'asc').map((c) => c.id)).toEqual(['a', 'b'])
+  })
+
+  it('does not mutate the input array', () => {
+    const input = [zeta, alpha]
+    const original = [...input]
+    sortContacts(input, 'name', 'asc')
+    expect(input).toEqual(original)
+  })
+
+  it('handles an empty list', () => {
+    expect(sortContacts([], 'name', 'asc')).toEqual([])
   })
 })

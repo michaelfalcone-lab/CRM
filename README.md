@@ -28,6 +28,13 @@ package.json  workspaces root
 
 ## Getting started
 
+**Node 24 is required.** It's pinned in `.nvmrc` (`nvm use` picks it up) and declared as
+`functions/package.json`'s `engines.node`, which is also what selects the deployed Cloud
+Functions runtime — so the version you develop and test against is the version that runs
+in production. Node 24 is the floor, not just a preference: `firebase-admin` requires
+`>=22`, and the older `nodejs20` runtime is decommissioned on the Cloud Run functions
+side as of October 30, 2026.
+
 Install dependencies for every workspace from the repo root:
 
 ```
@@ -74,10 +81,15 @@ apps → SDK setup and configuration → Config):
   wires up the emulator regardless of this variable.
 - `VITE_AUTH_BYPASS` (optional, **dev-only**) — set to `"true"` to skip Google sign-in and
   enter the app as a mock admin user (`frontend/src/lib/devAuthBypass.ts`) during local
-  dev. It's gated on `import.meta.env.DEV`, so it's inert and dead-code-eliminated from
-  any production `vite build`, but **never set `VITE_AUTH_BYPASS` in a deployed
-  environment's config** — e.g. don't set it as a Firebase Hosting env var or bake it into
-  a deployed build's `.env`. It exists purely as a local convenience.
+  dev. It's gated on `import.meta.env.DEV` **and** on Auth actually being wired to the
+  emulator, so it's inert and dead-code-eliminated from any production `vite build`, and
+  it stays inert if you point a dev server at a real project with
+  `VITE_USE_FIREBASE_EMULATOR=false` (you get the normal sign-in screen instead). That
+  second gate matters: the bypass signs in by creating a password account with a
+  hardcoded password, which must never reach a real project. Still, **never set
+  `VITE_AUTH_BYPASS` in a deployed environment's config** — e.g. don't set it as a
+  Firebase Hosting env var or bake it into a deployed build's `.env`. It exists purely as
+  a local convenience.
 
 When running against the Local Emulator Suite, these can be any non-empty placeholder
 values — the emulator doesn't validate them.

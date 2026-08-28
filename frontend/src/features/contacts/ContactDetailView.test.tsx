@@ -1,7 +1,7 @@
 /**
  * Component test for the contact detail page's ownership-gated affordances:
- * the UI must never offer an "Edit" or "Log Contact" button on a contact a
- * rep doesn't own — the rules would reject the write anyway (Log Contact's
+ * the UI must never offer an "Edit" or "Add Action" button on a contact a
+ * rep doesn't own — the rules would reject the write anyway (Add Action's
  * write batch touches `contacts.ownerId`-scoped rules via `ownsRecord()`),
  * but per the brief the UI should just avoid presenting a broken affordance
  * in the first place, rather than only reporting the denial after the fact.
@@ -89,6 +89,12 @@ vi.mock('./ContactNotesPanel', () => ({
   ContactNotesPanel: () => <div data-testid="notes-panel" />,
 }))
 
+// Stubbed like the Notes panel above — this file's tests are about the
+// header and the Add Action action; the log panel has its own suite.
+vi.mock('./ContactActivityPanel', () => ({
+  ContactActivityPanel: () => <div data-testid="activity-panel" />,
+}))
+
 function renderDetail() {
   return render(
     <MemoryRouter initialEntries={['/contacts/contact-1']}>
@@ -103,7 +109,7 @@ beforeEach(() => {
   currentUser = null
 })
 
-describe('ContactDetailView ownership-gated Edit/Log Contact affordances', () => {
+describe('ContactDetailView ownership-gated Edit/Add Action affordances', () => {
   it('does not offer Edit to a rep who does not own the contact', () => {
     currentUser = makeUser({ authUid: 'other-rep-uid', role: 'rep' })
     renderDetail()
@@ -122,37 +128,37 @@ describe('ContactDetailView ownership-gated Edit/Log Contact affordances', () =>
     expect(screen.getByRole('button', { name: 'Edit' })).toBeInTheDocument()
   })
 
-  it('does not offer Log Contact to a rep who does not own the contact', () => {
-    // The write would be denied by firestore.rules anyway (Log Contact's
+  it('does not offer Add Action to a rep who does not own the contact', () => {
+    // The write would be denied by firestore.rules anyway (Add Action's
     // batch includes a `contacts` update gated by `ownsRecord()`) — the UI
     // must not offer a broken affordance, and a rep opening this page
     // previously got the form with no indication the save would fail.
     currentUser = makeUser({ authUid: 'other-rep-uid', role: 'rep' })
     renderDetail()
-    expect(screen.queryByRole('button', { name: 'Log Contact' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Add Action' })).not.toBeInTheDocument()
   })
 
-  it('offers Log Contact to the owning rep', () => {
+  it('offers Add Action to the owning rep', () => {
     currentUser = makeUser({ authUid: 'owner-uid', role: 'rep' })
     renderDetail()
-    expect(screen.getByRole('button', { name: 'Log Contact' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Add Action' })).toBeInTheDocument()
   })
 
-  it('offers Log Contact to an admin regardless of ownership', () => {
+  it('offers Add Action to an admin regardless of ownership', () => {
     currentUser = makeUser({ authUid: 'admin-uid', role: 'admin' })
     renderDetail()
-    expect(screen.getByRole('button', { name: 'Log Contact' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Add Action' })).toBeInTheDocument()
   })
 })
 
-describe('ContactDetailView Log Contact error handling', () => {
+describe('ContactDetailView Add Action error handling', () => {
   it('surfaces a rejected logContact call to the user instead of failing silently', async () => {
     currentUser = makeUser({ authUid: 'owner-uid', role: 'rep' })
     vi.mocked(lib.logContact).mockRejectedValueOnce(new Error('Missing or insufficient permissions.'))
     const user = userEvent.setup()
     renderDetail()
 
-    await user.click(screen.getByRole('button', { name: 'Log Contact' }))
+    await user.click(screen.getByRole('button', { name: 'Add Action' }))
     await user.click(screen.getByRole('button', { name: 'Save' }))
 
     await waitFor(() => {
@@ -161,5 +167,44 @@ describe('ContactDetailView Log Contact error handling', () => {
     // The form must stay open so the rep can see the error and retry —
     // not silently close as if the save had succeeded.
     expect(screen.getByRole('button', { name: 'Save' })).toBeInTheDocument()
+  })
+
+  it("passes the contact's current status through so logContact can compute status advancement", async () => {
+    currentUser = makeUser({ authUid: 'owner-uid', role: 'rep' })
+    mockContact.status = 'active'
+    const user = userEvent.setup()
+    renderDetail()
+
+    await user.click(screen.getByRole('button', { name: 'Add Action' }))
+    await user.click(screen.getByRole('button', { name: 'Save' }))
+
+    await waitFor(() => {
+      expect(lib.logContact).toHaveBeenCalledWith(
+        'contact-1',
+        expect.any(String),
+        expect.any(Date),
+        expect.objectContaining({ currentStatus: 'active' }),
+      )
+    })
+    mockContact.status = undefined
+  })
+})
+
+describe('ContactDetailView back navigation', () => {
+  it('offers a back button that returns to the page the rep came from', async () => {
+    currentUser = makeUser({ authUid: 'owner-uid', role: 'rep' })
+    const user = userEvent.setup()
+    render(
+      <MemoryRouter initialEntries={['/contacts', '/contacts/contact-1']} initialIndex={1}>
+        <Routes>
+          <Route path="/contacts" element={<div>Contacts list</div>} />
+          <Route path="/contacts/:id" element={<ContactDetailView />} />
+        </Routes>
+      </MemoryRouter>,
+    )
+
+    await user.click(screen.getByRole('button', { name: /back/i }))
+
+    expect(screen.getByText('Contacts list')).toBeInTheDocument()
   })
 })

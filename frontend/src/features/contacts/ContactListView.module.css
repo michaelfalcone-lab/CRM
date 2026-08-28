@@ -31,3 +31,45 @@
 .error {
   color: var(--color-danger-text);
 }
+
+/* Inherits the header cell's own typography rather than restating it, so
+   a sortable header is visually identical to a plain one apart from the
+   cursor and the arrow. */
+.sortButton {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: 0;
+  border: none;
+  background: transparent;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+}
+
+.sortButton:hover {
+  text-decoration: underline;
+}
+
+/* Fixed width so the header text doesn't shift sideways as the arrow
+   appears and disappears between sort states. */
+.sortArrow {
+  display: inline-block;
+  width: 0.75em;
+  font-size: 0.7em;
+}
+
+.actionForm {
+  display: flex;
+  align-items: flex-end;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+.actionForm input[type='date'] {
+  font-family: var(--font-body);
+  font-size: var(--font-size-small);
+  padding: 0.55em 0.75em;
+  border: 1px solid var(--gray-300);
+  border-radius: var(--radius-sm);
+}

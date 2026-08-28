@@ -182,6 +182,25 @@
   --viz-near-black: #2f2f2f;
   --viz-mid-gray: #8c8c8c;
 
+  /* ---- Series hues for the dashboard's charts. OFF-BRAND by explicit
+         direction, and deliberately so: the brand colors are unreadable
+         as data fills on the dark chart well (brand brown ≈1.40:1, brand
+         red ≈2.43:1, both under WCAG's 3:1 for a graphical object), and
+         an all-neutral ramp separated adjacent stacked segments by only
+         ≈1.1–1.5:1, so the bars merged into one block. Saturated hues fix
+         both. Validated as a set (contrast, chroma, colorblind and
+         normal-vision separation) — see `features/dashboard/theme.ts`,
+         which mirrors these values and documents the full check results.
+         Chrome and typography are unchanged and still brand.
+         MUST be flagged for Brand Management before this dashboard is
+         shown to Learfield/a partner/the public. ---- */
+  --viz-green: #3dff5e;
+  --viz-magenta: #ff4fd8;
+  --viz-yellow: #ffd400;
+  --viz-cyan: #00e5ff;
+  --viz-orange: #ff8a1f;
+  --viz-red: #ff3b3b;
+
   /* ---- Type families ---- */
   --font-heading: 'Heron Serif', Georgia, 'Times New Roman', serif;
   --font-body: 'Ibis Display', Georgia, 'Times New Roman', serif;

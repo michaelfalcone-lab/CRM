@@ -12,7 +12,7 @@ import {
   serverTimestamp,
   where,
 } from 'firebase/firestore'
-import type { Opportunity, OpportunityStage, Sport } from 'shared'
+import type { Contact, Opportunity, OpportunityStage, Sport } from 'shared'
 import { db } from '../firebase'
 import type { WithId } from '../firestoreTypes'
 
@@ -182,6 +182,20 @@ export interface UpdateOpportunityInput {
  * always resolvable (you can only move *into* a stage the form currently
  * offers, so `incoming` is always a real, active stage) and self-healing:
  * any move out of a won/lost stage — retired or not — clears the field.
+ *
+ * Also syncs the linked `Contact.status` to `'win'`/`'dead'`, in the same
+ * transaction, on the moment of a fresh transition into Won/Lost (never on
+ * reopening, and never on a no-op re-save) — see the "contact status sync"
+ * block in this function's tests for the exact tie-break rules: Win always
+ * wins, even over an existing Dead from a different sport's opportunity
+ * for the same contact; a Lost never demotes an already-Win contact. This
+ * mirrors the same "read fresh inside the transaction, don't trust a
+ * cached value" discipline as the `wonAt`/`lostAt` logic above — a
+ * concurrent edit to the contact (or a second opportunity for the same
+ * contact resolving at nearly the same moment) can't race this into a
+ * wrong status. Firestore requires every read in a transaction before any
+ * write, which is why the (conditional) contact read happens before
+ * either `tx.update` call below, not interleaved with them.
  */
 export async function updateOpportunity(
   id: string,
@@ -205,6 +219,11 @@ export async function updateOpportunity(
     }
     if (patch.ownerId !== undefined) data.ownerId = patch.ownerId
 
+    // Set only on a FRESH transition into Won/Lost (never on reopening,
+    // never on a no-op re-save) — mirrors exactly the same conditions that
+    // set `wonAt`/`lostAt` above, one-to-one.
+    let freshTransition: 'win' | 'lost' | undefined
+
     if (patch.stage !== undefined) {
       data.stage = patch.stage
 
@@ -216,13 +235,19 @@ export async function updateOpportunity(
         // unresolvable for a since-retired stage. See this function's doc
         // comment for why.
         if (incoming.isWon) {
-          if (!current.wonAt) data.wonAt = serverTimestamp()
+          if (!current.wonAt) {
+            data.wonAt = serverTimestamp()
+            freshTransition = 'win'
+          }
         } else if (current.wonAt) {
           data.wonAt = deleteField()
         }
 
         if (incoming.isLost) {
-          if (!current.lostAt) data.lostAt = serverTimestamp()
+          if (!current.lostAt) {
+            data.lostAt = serverTimestamp()
+            if (freshTransition !== 'win') freshTransition = 'lost'
+          }
         } else if (current.lostAt) {
           data.lostAt = deleteField()
           // A stale lost reason shouldn't survive reopening the deal,
@@ -232,6 +257,29 @@ export async function updateOpportunity(
       }
     }
 
+    // All reads happen here, before either tx.update call below.
+    let contactRef: ReturnType<typeof doc> | undefined
+    let nextContactStatus: 'win' | 'dead' | undefined
+    if (freshTransition) {
+      contactRef = doc(db, 'contacts', current.contactId)
+      const contactSnap = await tx.get(contactRef)
+      if (contactSnap.exists()) {
+        const contact = contactSnap.data() as Contact
+        if (freshTransition === 'win') {
+          nextContactStatus = 'win'
+        } else if (contact.status !== 'win') {
+          nextContactStatus = 'dead'
+        }
+        // else: freshTransition === 'lost' but the contact already won
+        // elsewhere — leave it untouched, per the tie-break rule above.
+      }
+      // A missing contact doc (deleted independently of its opportunities)
+      // is left alone too — the opportunity update itself still succeeds.
+    }
+
     tx.update(ref, data)
+    if (contactRef && nextContactStatus) {
+      tx.update(contactRef, { status: nextContactStatus, updatedAt: serverTimestamp() })
+    }
   })
 }

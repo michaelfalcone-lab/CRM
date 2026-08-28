@@ -43,7 +43,7 @@ import {
   where,
   type QueryConstraint,
 } from 'firebase/firestore'
-import type { Activity, Opportunity } from 'shared'
+import { WIN_ACTIVITY_TYPES, type Activity, type Opportunity } from 'shared'
 import { db } from '../../lib/firebase'
 import type { WithId } from '../../lib/firestoreTypes'
 import type { PeriodRange } from './period'
@@ -115,11 +115,52 @@ function useRangeQuery<T>(
   return { items, loading, error }
 }
 
+/**
+ * Every response-type activity, ALL TIME — deliberately not period-scoped.
+ *
+ * The Win Rate widget asks "of everyone we own, how many have ever
+ * responded", so it can't reuse the period-scoped `activities` query
+ * above: that would shrink the numerator with the date filter while the
+ * denominator (all owned contacts) stayed fixed, making the rate collapse
+ * toward zero whenever a narrow period was selected.
+ *
+ * Filters server-side on `type` rather than reading the whole collection
+ * and filtering in the client — a single-field `in` query, so Firestore's
+ * automatic indexing covers it with no `firestore.indexes.json` entry.
+ */
+function useAllTimeResponseActivities(): RangeQueryResult<Activity> {
+  const [items, setItems] = useState<WithId<Activity>[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    const q = query(collection(db, 'activities'), where('type', 'in', [...WIN_ACTIVITY_TYPES]))
+    const unsubscribe = onSnapshot(
+      q,
+      (snapshot) => {
+        setItems(snapshot.docs.map((d) => ({ id: d.id, ...(d.data() as Activity) })))
+        setLoading(false)
+        setError(null)
+      },
+      (err) => {
+        setError(err.message)
+        setLoading(false)
+      },
+    )
+    return unsubscribe
+  }, [])
+
+  return { items, loading, error }
+}
+
 export interface DashboardData {
   activities: WithId<Activity>[]
   opportunitiesCreated: WithId<Opportunity>[]
   opportunitiesWon: WithId<Opportunity>[]
   opportunitiesLost: WithId<Opportunity>[]
+  /** All-time response activities, for the Win Rate widget only — every
+   * other field here is period-scoped. */
+  responseActivities: WithId<Activity>[]
   loading: boolean
   error: string | null
 }
@@ -141,13 +182,16 @@ export function useDashboardData(range: PeriodRange | null): DashboardData {
   const lost = useRangeQuery<Opportunity>('opportunities', 'lostAt', range, {
     fieldAlwaysPresent: false,
   })
+  const responses = useAllTimeResponseActivities()
 
   return {
     activities: activities.items,
     opportunitiesCreated: created.items,
     opportunitiesWon: won.items,
     opportunitiesLost: lost.items,
-    loading: activities.loading || created.loading || won.loading || lost.loading,
-    error: activities.error ?? created.error ?? won.error ?? lost.error,
+    responseActivities: responses.items,
+    loading:
+      activities.loading || created.loading || won.loading || lost.loading || responses.loading,
+    error: activities.error ?? created.error ?? won.error ?? lost.error ?? responses.error,
   }
 }

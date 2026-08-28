@@ -33,6 +33,17 @@
   font-family: var(--font-caption);
 }
 
+/* The base `Table.module.css` zebra stripe is set on the ROW
+ * (`.table tbody tr:nth-child(even)`), not the cell — an opaque
+ * near-white meant for a white page. The cell-level override below was
+ * added without neutralising it, so every even row rendered white text on
+ * a near-white band: "Opportunities Created" and "Conversion Rate" were
+ * effectively invisible on the dashboard. Reset the row here, then apply
+ * the dark-surface stripe on the cell. */
+.darkTable tbody tr:nth-child(even) {
+  background: transparent;
+}
+
 .darkTable tbody tr:nth-child(even) td {
   background: rgba(255, 255, 255, 0.05);
 }

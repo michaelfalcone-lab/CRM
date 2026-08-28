@@ -40,8 +40,13 @@ export const functions = getFunctions(app)
  * build` always has `import.meta.env.DEV === false`, so this block is
  * dead code (and its `connect*Emulator` calls never run) in anything
  * deployed to Firebase Hosting.
+ *
+ * Exported so `devAuthBypass` can refuse to run against a real project:
+ * the bypass creates a password-auth account, and "am I pointed at the
+ * emulator?" is exactly this expression — not `import.meta.env.DEV` alone,
+ * which is still true when a dev server is aimed at a live project.
  */
-const emulatorsEnabled = import.meta.env.DEV && import.meta.env.VITE_USE_FIREBASE_EMULATOR !== 'false'
+export const emulatorsEnabled = import.meta.env.DEV && import.meta.env.VITE_USE_FIREBASE_EMULATOR !== 'false'
 
 if (emulatorsEnabled) {
   connectAuthEmulator(auth, 'http://127.0.0.1:9099', { disableWarnings: true })

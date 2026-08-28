@@ -54,5 +54,7 @@ export {
 } from './firestore/duplicates'
 
 export { useStatuses, useOpportunityStages } from './firestore/config'
+export { useActivitiesForContact } from './firestore/activities'
+export type { UseActivitiesForContactResult } from './firestore/activities'
 
 export { useOwnerDirectory, type OwnerOption } from './firestore/users'

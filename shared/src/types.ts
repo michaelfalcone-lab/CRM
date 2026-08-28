@@ -23,7 +23,7 @@ export type Role = 'admin' | 'rep'
 export type LastContactMode = 'Email' | 'Phone' | 'In-Person' | 'Text' | 'Other'
 
 /**
- * The 7 rep-activity types the sales-output dashboard buckets and counts.
+ * The 8 rep-activity types the sales-output dashboard buckets and counts.
  * Distinct from (and richer than) `LastContactMode` — `logContact` writes
  * both: an `Activity` doc with the precise `ActivityType`, and the legacy
  * `Contact.lastContactMode` via `ACTIVITY_TYPE_TO_LAST_CONTACT_MODE`'s
@@ -33,11 +33,20 @@ export type LastContactMode = 'Email' | 'Phone' | 'In-Person' | 'Text' | 'Other'
  */
 export type ActivityType =
   | 'Email'
+  /** The prospect emailed back. Logged as its own dated event, separately
+   * from the outbound `'Email'` that preceded it — an email sent is an
+   * attempt, a reply is a response, and the Win Rate metric counts only
+   * the latter. See `WIN_ACTIVITY_TYPES` in the dashboard's
+   * `aggregations.ts`. */
+  | 'Email Reply Received'
   | 'Inbound Call'
   | 'Outbound Call - Talked To'
   | 'Outbound Call - VM'
+  /** The prospect called back after a voicemail. Same rationale as
+   * `'Email Reply Received'`: the voicemail is the attempt, this is the
+   * response. */
+  | 'Voicemail Returned'
   | 'Onsite Appointment'
-  | 'Seat Visit'
   | 'Other'
 
 /** The controlled vocabulary for `Opportunity.lostReason`'s dropdown (see

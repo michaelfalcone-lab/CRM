@@ -1,11 +1,11 @@
 import { useMemo, useState } from 'react'
 import { useCurrentUser } from '../../app/AuthProvider'
-import { useOpportunityStages, useOwnerDirectory } from '../../lib'
+import { useContacts, useOpportunityStages, useOwnerDirectory } from '../../lib'
 import {
   computeConversionResults,
   computePipeline,
   computeTotalOutput,
-  computeWinRate,
+  computeContactResponseRate,
   unionOpportunities,
   type RepDirectoryEntry,
 } from './aggregations'
@@ -33,6 +33,10 @@ export function DashboardPage() {
   const { user } = useCurrentUser()
   const { owners, loading: ownersLoading } = useOwnerDirectory(user)
   const { stages, loading: stagesLoading } = useOpportunityStages()
+  // Unfiltered and NOT period-scoped: the Win Rate widget's denominator is
+  // every contact the team owns, all time. `useContacts` already drops
+  // merged-away duplicates, which must not inflate the denominator.
+  const { contacts, loading: contactsLoading } = useContacts()
 
   const [preset, setPreset] = useState<PeriodPreset>('overall')
   const [customStart, setCustomStart] = useState('')
@@ -80,9 +84,9 @@ export function DashboardPage() {
     () => computeTotalOutput(data.activities, reps),
     [data.activities, reps],
   )
-  const winRate = useMemo(
-    () => computeWinRate(data.opportunitiesWon, data.opportunitiesLost),
-    [data.opportunitiesWon, data.opportunitiesLost],
+  const responseRate = useMemo(
+    () => computeContactResponseRate(contacts, data.responseActivities, reps),
+    [contacts, data.responseActivities, reps],
   )
   const conversionResults = useMemo(
     () => computeConversionResults(data.activities, data.opportunitiesCreated, data.opportunitiesWon, reps),
@@ -97,7 +101,7 @@ export function DashboardPage() {
     [pipelineScope, stages, reps],
   )
 
-  const loading = ownersLoading || stagesLoading || data.loading
+  const loading = ownersLoading || stagesLoading || contactsLoading || data.loading
 
   // A 'custom' preset with no complete/valid range MUST NOT fall through
   // to rendering the widgets against `useDashboardData(null)` — that scope
@@ -138,7 +142,7 @@ export function DashboardPage() {
             <TotalOutputChart rows={totalOutput.rows} teamTotal={totalOutput.teamTotal} />
           </div>
           <div className={styles.gauge}>
-            <WinRateGauge result={winRate} />
+            <WinRateGauge result={responseRate} />
           </div>
           <div className={styles.pipeline}>
             <PipelineChart rows={pipeline.rows} stages={pipeline.stages} />

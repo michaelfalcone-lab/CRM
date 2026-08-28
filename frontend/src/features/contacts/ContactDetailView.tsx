@@ -16,6 +16,7 @@ import {
   useStatuses,
 } from '../../lib'
 import { OpportunityList } from '../opportunities'
+import { ContactActivityPanel } from './ContactActivityPanel'
 import { ContactNotesPanel } from './ContactNotesPanel'
 import styles from './ContactDetailView.module.css'
 
@@ -25,10 +26,12 @@ function formatDate(ts: { seconds: number } | undefined): string {
 }
 
 /**
- * Contact detail: a header (name/org/status/owner) with a small "Edit"
- * affordance gated by ownership/admin, one dominant primary action ("Log
- * Contact" — updates `lastContactDate`/`lastContactMode` in one step, no
- * wizard), an Opportunities section, and a Notes panel.
+ * Contact detail: a back button, a header (name/org/status/owner) with a
+ * small "Edit" affordance gated by ownership/admin, one dominant primary
+ * action ("Add Action" — updates `lastContactDate`/`lastContactMode` and
+ * advances the automated status workflow in one step, no wizard), then
+ * Contact Log, Notes, and Opportunities in that order — the log is the
+ * factual record of what happened and when, so it leads.
  */
 export function ContactDetailView() {
   const { id } = useParams<{ id: string }>()
@@ -65,6 +68,7 @@ export function ContactDetailView() {
         organizationId: contact!.organizationId,
         ownerId: contact!.ownerId,
         createdBy: user.authUid,
+        currentStatus: contact!.status,
       })
       setLogging(false)
     } catch (err) {
@@ -76,6 +80,14 @@ export function ContactDetailView() {
 
   return (
     <div className={styles.page}>
+      {/* Real browser-history back, not a fixed "/contacts" link — the
+          profile is reachable from several places (the list, an
+          organization's linked contacts, global search, the duplicates
+          worklist), and a fixed link would return to the wrong page from
+          every entry point except the first. */}
+      <Button variant="ghost" className={styles.backButton} onClick={() => navigate(-1)}>
+        ← Back
+      </Button>
       <Card>
         <div className={styles.header}>
           <div>
@@ -119,7 +131,7 @@ export function ContactDetailView() {
           <div className={styles.primaryAction}>
             {!logging ? (
               <Button variant="primary" onClick={() => setLogging(true)}>
-                Log Contact
+                Add Action
               </Button>
             ) : (
               <div className={styles.logForm}>
@@ -150,6 +162,18 @@ export function ContactDetailView() {
         )}
       </Card>
 
+      {/* Contact Log leads: it's the factual record of what happened and
+          when (and what the dashboard's Win Rate reads), Notes is free-text
+          colour on top of it, and Opportunities — the least frequently
+          checked of the three on a routine visit — comes last. */}
+      <Card>
+        <ContactActivityPanel contactId={contact.id} contactCreatedAt={contact.createdAt} />
+      </Card>
+
+      <Card>
+        <ContactNotesPanel contactId={contact.id} currentUser={user} />
+      </Card>
+
       <Card>
         <OpportunityList
           opportunities={opportunities}
@@ -157,10 +181,6 @@ export function ContactDetailView() {
           currentUser={user}
           contactId={contact.id}
         />
-      </Card>
-
-      <Card>
-        <ContactNotesPanel contactId={contact.id} currentUser={user} />
       </Card>
     </div>
   )

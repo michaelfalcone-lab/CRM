@@ -138,10 +138,39 @@ describe('createContact', () => {
     const payload = addDocMock.mock.calls[0]![1] as Record<string, unknown>
     expect(payload).not.toHaveProperty('email')
     expect(payload).not.toHaveProperty('phone')
-    expect(payload).not.toHaveProperty('status')
+    expect(payload).not.toHaveProperty('organizationName')
+  })
+
+  it('always starts a new contact at new-lead — status is never caller-supplied', async () => {
+    // The automated workflow (statusWorkflow.ts) owns every status
+    // transition from here on; this function is the one place that sets
+    // the starting value, and it's fixed, not a form field.
+    await createContact({
+      firstName: 'A',
+      lastName: 'B',
+      organizationId: null,
+      ownerId: 'rep-1',
+      createdBy: 'rep-1',
+    })
+    const payload = addDocMock.mock.calls[0]![1] as Record<string, unknown>
+    expect(payload.status).toBe('new-lead')
+  })
+
+  it('never accepts lastContactDate/lastContactMode — logging a first touch happens via logContact, not creation', async () => {
+    // `CreateContactInput` no longer has these fields at all (a type-level
+    // guarantee); this pins the write-payload side of that removal so a
+    // future regression re-adding them to the payload is caught even if
+    // the type were loosened again.
+    await createContact({
+      firstName: 'A',
+      lastName: 'B',
+      organizationId: null,
+      ownerId: 'rep-1',
+      createdBy: 'rep-1',
+    })
+    const payload = addDocMock.mock.calls[0]![1] as Record<string, unknown>
     expect(payload).not.toHaveProperty('lastContactDate')
     expect(payload).not.toHaveProperty('lastContactMode')
-    expect(payload).not.toHaveProperty('organizationName')
   })
 
   it('includes organizationName only when an organization is actually set', async () => {
@@ -214,9 +243,8 @@ describe('ACTIVITY_TYPE_TO_LAST_CONTACT_MODE', () => {
     expect(ACTIVITY_TYPE_TO_LAST_CONTACT_MODE['Outbound Call - VM']).toBe('Phone')
   })
 
-  it('collapses onsite/seat-visit onto In-Person', () => {
+  it('collapses onsite appointments onto In-Person', () => {
     expect(ACTIVITY_TYPE_TO_LAST_CONTACT_MODE['Onsite Appointment']).toBe('In-Person')
-    expect(ACTIVITY_TYPE_TO_LAST_CONTACT_MODE['Seat Visit']).toBe('In-Person')
   })
 
   it('maps Email and Other 1:1', () => {
@@ -254,7 +282,7 @@ describe('logContact', () => {
   })
 
   it('sets every required Activity field, denormalized from the passed-in context', async () => {
-    await logContact('contact-1', 'Seat Visit', new Date('2026-01-01T00:00:00Z'), baseContext)
+    await logContact('contact-1', 'Onsite Appointment', new Date('2026-01-01T00:00:00Z'), baseContext)
 
     expect(batchSetMock).toHaveBeenCalledTimes(1)
     const activityPayload = batchSetMock.mock.calls[0]![1] as Record<string, unknown>
@@ -262,7 +290,7 @@ describe('logContact', () => {
       contactId: 'contact-1',
       contactName: 'Jane Doe',
       organizationId: 'org-1',
-      type: 'Seat Visit',
+      type: 'Onsite Appointment',
       ownerId: 'rep-1',
       createdBy: 'rep-1',
     })
@@ -274,6 +302,32 @@ describe('logContact', () => {
     await logContact('contact-1', 'Email', new Date(), baseContext)
     const activityPayload = batchSetMock.mock.calls[0]![1] as Record<string, unknown>
     expect(activityPayload).not.toHaveProperty('note')
+  })
+
+  describe('status advancement', () => {
+    it('advances an unset (brand-new) contact to active on the contact-update patch', async () => {
+      await logContact('contact-1', 'Email', new Date(), baseContext)
+      const contactPatch = batchUpdateMock.mock.calls[0]![1] as Record<string, unknown>
+      expect(contactPatch.status).toBe('active')
+    })
+
+    it('advances straight to warm when the logged type is a response, passing the contact\'s current status through', async () => {
+      await logContact('contact-1', 'Inbound Call', new Date(), { ...baseContext, currentStatus: 'active' })
+      const contactPatch = batchUpdateMock.mock.calls[0]![1] as Record<string, unknown>
+      expect(contactPatch.status).toBe('warm')
+    })
+
+    it('omits status from the patch entirely when nothing should change — never writes an unchanged value', async () => {
+      await logContact('contact-1', 'Email', new Date(), { ...baseContext, currentStatus: 'active' })
+      const contactPatch = batchUpdateMock.mock.calls[0]![1] as Record<string, unknown>
+      expect(contactPatch).not.toHaveProperty('status')
+    })
+
+    it('never advances a terminal (win/dead) contact off its terminal status', async () => {
+      await logContact('contact-1', 'Inbound Call', new Date(), { ...baseContext, currentStatus: 'win' })
+      const contactPatch = batchUpdateMock.mock.calls[0]![1] as Record<string, unknown>
+      expect(contactPatch).not.toHaveProperty('status')
+    })
   })
 
   it('trims and includes note when supplied', async () => {

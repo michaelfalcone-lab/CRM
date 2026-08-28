@@ -24,11 +24,14 @@ export const NOT_INVITED_REASON = 'not-invited'
  */
 export const ACTIVITY_TYPES: readonly ActivityType[] = [
   'Email',
+  // Sits directly after the outbound touch it responds to, so the pair
+  // reads as attempt-then-response in the Log Contact dropdown.
+  'Email Reply Received',
   'Inbound Call',
   'Outbound Call - Talked To',
   'Outbound Call - VM',
+  'Voicemail Returned',
   'Onsite Appointment',
-  'Seat Visit',
   'Other',
 ]
 
@@ -65,4 +68,33 @@ export const LOST_REASONS: readonly LostReason[] = [
   'Cost',
   'Game Times',
   'Other',
+]
+
+/**
+ * The activity types that mark a contact as having RESPONDED, as opposed
+ * to merely being contacted.
+ *
+ * Lives here (rather than in the dashboard feature that originally defined
+ * it) because it's now a genuine cross-cutting business rule, not just a
+ * reporting concept: `frontend/src/lib/statusWorkflow.ts` uses it to decide
+ * when a contact advances from Active to Warm, and the dashboard's
+ * `aggregations.ts` uses it for the Win Rate widget — a `lib/` module
+ * can't import from a `features/` module (this codebase's layering only
+ * goes the other way), so this had to move up to `shared` for both to use
+ * it without either duplicating it or drifting apart.
+ *
+ * The distinction this encodes: an outbound touch is an attempt, not a
+ * response. `'Email'` (sent) and `'Outbound Call - VM'` (voicemail left)
+ * are attempts and never qualify on their own — a contact stays merely
+ * "contacted" until a reply is actually logged against it. `'Inbound
+ * Call'` and `'Outbound Call - Talked To'` qualify immediately because the
+ * prospect was on the line. `'Onsite Appointment'` deliberately does NOT
+ * qualify: this build tracks outbound contact only, a confirmed product
+ * decision, not an oversight.
+ */
+export const WIN_ACTIVITY_TYPES: readonly ActivityType[] = [
+  'Inbound Call',
+  'Outbound Call - Talked To',
+  'Voicemail Returned',
+  'Email Reply Received',
 ]
