@@ -5,8 +5,8 @@
  */
 import { HttpsError, onCall } from 'firebase-functions/v2/https'
 import { FieldValue } from 'firebase-admin/firestore'
-import { NOT_INVITED_REASON } from 'shared'
 import type { User } from 'shared'
+import { NOT_INVITED_REASON } from '../lib/sharedConstants'
 import { db } from '../lib/firebaseAdmin'
 import { toEmailLower } from '../lib/config'
 
@@ -15,10 +15,11 @@ import { toEmailLower } from '../lib/config'
  * enum (see firebase-functions), which has no "not-invited" value. The
  * client-distinguishable reason therefore lives in `details.reason` — the
  * frontend should check `error.details?.reason === NOT_INVITED_REASON`
- * rather than parsing the human-readable message. The constant itself
- * lives in `shared` (not duplicated here) so `/frontend` and `/functions`
- * can't drift apart on the literal; re-exported so existing imports of
- * `NOT_INVITED_REASON` from this module keep working.
+ * rather than parsing the human-readable message. `shared` is the source
+ * of truth for the literal (the frontend imports it from there); this
+ * function can't `require('shared')` at deploy time, so it reads a
+ * parity-tested local mirror (`../lib/sharedConstants`) and re-exports it
+ * so existing imports of `NOT_INVITED_REASON` from this module keep working.
  */
 export { NOT_INVITED_REASON }
 

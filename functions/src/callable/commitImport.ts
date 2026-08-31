@@ -66,8 +66,8 @@
  */
 import { HttpsError, onCall } from 'firebase-functions/v2/https'
 import { Timestamp, type DocumentReference } from 'firebase-admin/firestore'
-import { LAST_CONTACT_MODES } from 'shared'
 import type { Contact, ImportBatch, LastContactMode, Organization } from 'shared'
+import { LAST_CONTACT_MODES } from '../lib/sharedConstants'
 import { db } from '../lib/firebaseAdmin'
 import { requireActiveUser } from '../lib/config'
 import { findIdentityMatch, normalizeEmailForMatching, type IdentityMatchResult } from '../lib/identityMatching'
@@ -111,9 +111,11 @@ export interface CommitImportResult {
   errors: CommitImportRowError[]
 }
 
-/** Membership view over `shared`'s canonical `LAST_CONTACT_MODES`. Built
- * from the shared list rather than re-typing the five literals, so this
- * server-side validation can never drift from what the CSV importer's
+/** Membership view over the canonical `LAST_CONTACT_MODES` (sourced from
+ * `../lib/sharedConstants`, a parity-tested mirror of `shared`'s list —
+ * see that file for why functions can't import `shared` values at deploy
+ * time). Built from the list rather than re-typing the five literals, so
+ * this server-side validation can never drift from what the CSV importer's
  * mapping step offers or what the contact edit form writes. */
 const LAST_CONTACT_MODE_SET: ReadonlySet<string> = new Set(LAST_CONTACT_MODES)
 const MAX_REPORTED_ERRORS = 50
