@@ -160,35 +160,91 @@ then auto-run it as a hook before `deploy` too, on top of the tests already embe
 ### One-time GCP/Firebase project setup
 
 Only needed once, when standing up a new environment (e.g. production) that doesn't
-exist yet:
+exist yet. The live project is **`brown-sales`** (`.firebaserc` `default`); these steps
+document how it was set up and what a fresh project would need.
 
 1. Create a Firebase project in the [Firebase Console](https://console.firebase.google.com)
    (or `firebase projects:create`).
-2. Enable **Firestore** in Native mode, in your target region.
-3. Enable **Firebase Authentication** and turn on the **Google** sign-in provider. Under
-   the Google provider's settings, restrict it to the Workspace domain this app is
-   configured for (`brown.edu` — see `WORKSPACE_DOMAIN` in
-   `functions/src/lib/config.ts`), or otherwise ensure only that domain's accounts can
-   sign in; the callables re-check this server-side, but narrowing it at the Auth
-   provider level is good defense in depth.
-4. Enable **Firebase Hosting** for the project.
-5. Register a **Web app** in Project settings → General → Your apps, and copy its SDK
-   config values — you'll need them for the frontend env vars below.
-6. Replace the placeholder project ID in `.firebaserc` (`"default": "replace-with-project-id"`)
-   with your real Firebase project ID, or run `firebase use --add` and select it
-   interactively.
-7. Set the Cloud Functions runtime's required config/environment as needed (this app's
-   functions currently need no additional runtime config beyond the Admin SDK's default
-   credentials).
+2. **Upgrade the project to the Blaze (pay-as-you-go) plan.** Cloud Functions cannot be
+   deployed on the free Spark plan — `firebase deploy` will refuse. Actual cost for this
+   workload is effectively $0 (well within the monthly free quotas); set a budget alert
+   anyway.
+3. Enable **Firestore** in **Native mode**, region **`us-central1`** (co-located with the
+   default Cloud Functions region — the location is permanent, so don't pick a
+   multi-region). Start in production mode; the real rules are deployed from this repo.
+4. Enable **Firebase Authentication** and turn on the **Google** sign-in provider. The
+   `@brown.edu`-only restriction is already enforced server-side by `inviteUser` /
+   `linkAccount` (`WORKSPACE_DOMAIN` in `functions/src/lib/config.ts`); narrowing it at
+   the provider / OAuth-consent-screen level too is good defense in depth but not required.
+5. Enable **Firebase Hosting** (the `brown-sales` project already has a site).
+6. Register a **Web app** in Project settings → General → Your apps and copy its SDK
+   config — the six `VITE_FIREBASE_*` values (see next section).
+7. Put the real project ID in `.firebaserc` (`"default"`), or `firebase use --add`.
+8. **`firebase-tools` must be v14+** (pinned in the root `package.json`). 13.x rejects the
+   Node 24 functions runtime and silently deploys zero functions — run `npm install` and
+   confirm with `npx firebase --version`.
+9. Cloud Functions need no runtime config/secrets beyond the Admin SDK's default
+   credentials. `functions/src/lib/globalOptions.ts` caps every function at
+   `maxInstances: 10`.
 
 ### Frontend production env vars
 
-Before building, provide the frontend's env vars for the target environment (e.g. as a
-`frontend/.env.production.local`, or however your CI/CD injects Vite env vars at build
-time) — the same `VITE_FIREBASE_*` values described above, populated with the real
-project's Web app config. Leave `VITE_USE_FIREBASE_EMULATOR` unset (a production build
-never uses the emulator regardless) and **do not set `VITE_AUTH_BYPASS`** — see the
-warning above.
+The build reads `frontend/.env.production.local` (git-ignored, present on the deploy
+machine) — the six `VITE_FIREBASE_*` values from the Web app's SDK config. Vite loads
+this ahead of `.env.local` for `vite build`, so a dev machine's emulator/demo values in
+`.env.local` never reach a production bundle. CI can inject the same names as
+`VITE_`-prefixed env vars instead. Leave `VITE_USE_FIREBASE_EMULATOR` unset and **never
+set `VITE_AUTH_BYPASS`** for a real build.
+
+The `VITE_FIREBASE_API_KEY` is not a secret — it is a public project identifier, not a
+credential (access is governed by `firestore.rules` and the Auth provider config). It is
+visible in the shipped bundle, which is expected.
+
+### Seed the config collections (one-time, per project)
+
+The app reads two admin-config collections that have no UI to create them. Run both once
+against the target project, after the first deploy, with the same credentials the
+first-admin bootstrap uses:
+
+```
+GOOGLE_APPLICATION_CREDENTIALS=/path/to/service-account.json \
+GCLOUD_PROJECT=brown-sales \
+  node scripts/seedStatuses.ts
+
+GOOGLE_APPLICATION_CREDENTIALS=/path/to/service-account.json \
+GCLOUD_PROJECT=brown-sales \
+  node scripts/seedPipelineStages.ts
+```
+
+`seedStatuses` writes the 5 relationship statuses (`new-lead` / `active` / `warm` / `win`
+/ `lost`); `seedPipelineStages` writes the 5 opportunity stages. Without `statuses`, every
+status badge and the status dropdown render blank; without `opportunityStages`, the
+opportunity form has no stages to pick. Both refuse to overwrite existing docs unless
+passed `--force`.
+
+### Recommended follow-up: Content-Security-Policy
+
+`firebase.json` sets `X-Frame-Options`, `X-Content-Type-Options`, `Referrer-Policy`,
+`Strict-Transport-Security`, and cache headers, but **not** a `Content-Security-Policy` —
+a too-strict CSP silently breaks the Firestore transport or the Google Sign-In popup, and
+`firebase.json` (JSON) can't carry an explanatory comment. Add one after the first deploy,
+verified live: deploy, open the app with the browser console open, sign in, click through
+every screen, and confirm zero CSP violations before committing. A known-good starting
+point for this app (relax only if the console flags something):
+
+```
+Content-Security-Policy: default-src 'self';
+  script-src 'self' https://apis.google.com;
+  style-src 'self' 'unsafe-inline';
+  img-src 'self' data: https:;
+  font-src 'self';
+  connect-src 'self' https://*.googleapis.com https://*.cloudfunctions.net;
+  frame-src 'self' https://brown-sales.firebaseapp.com https://accounts.google.com;
+  frame-ancestors 'self'; base-uri 'self'; object-src 'none'; form-action 'self'
+```
+
+(`'unsafe-inline'` for `style-src` covers Recharts' inline SVG styles; `apis.google.com`
+is the gapi loader Firebase Auth injects at sign-in.)
 
 ### Deploying
 
@@ -199,10 +255,16 @@ and authenticated (`firebase login`, or equivalent CI credentials):
 npm run deploy
 ```
 
-This runs the full `test:rules` (66 tests) and `test:functions` (52+ tests) suites
-against the Firestore/Auth emulators first, then — only if both pass — runs
-`firebase deploy`, which deploys Firestore rules/indexes, Cloud Functions, and Hosting
-together as configured in `firebase.json`.
+This runs the full `test:rules` and `test:functions` suites against the Firestore/Auth
+emulators first (Java must be installed — see `scripts/with-java.sh`), then — only if both
+pass — runs `firebase deploy`, which deploys Firestore rules/indexes, Cloud Functions, and
+Hosting together as configured in `firebase.json`.
+
+The first deploy against a fresh project also creates the composite indexes declared in
+`firestore.indexes.json` (including the `users`, `statuses`, and `opportunityStages`
+`active`+order indexes the app's dropdowns need — the emulator does not enforce indexes,
+so a missing one only surfaces in production as `failed-precondition`). New indexes take
+a few minutes to build after the deploy returns; queries that need them error until then.
 
 ### First-admin bootstrap
 
