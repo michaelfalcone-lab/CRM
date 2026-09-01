@@ -12,6 +12,7 @@ export {
   updateContact,
   logContact,
   deleteActivity,
+  deleteContact,
   ACTIVITY_TYPE_TO_LAST_CONTACT_MODE,
   type ContactFilters,
   type CreateContactInput,

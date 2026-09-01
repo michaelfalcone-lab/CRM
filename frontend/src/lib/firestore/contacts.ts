@@ -20,6 +20,7 @@ import { useEffect, useState } from 'react'
 import {
   addDoc,
   collection,
+  deleteDoc,
   deleteField,
   doc,
   onSnapshot,
@@ -396,4 +397,24 @@ export async function deleteActivity(
   })
 
   await batch.commit()
+}
+
+/**
+ * Permanently removes a contact.
+ *
+ * Deletes ONLY the `contacts/{id}` doc. The `onContactWrite` Cloud Function
+ * fires on that delete and cascades the cleanup of the contact's
+ * `activities`, `opportunities`, and `notes` with the Admin SDK — the
+ * client is deliberately not given permission to delete another rep's
+ * activities directly, and a multi-batch client-side cascade could
+ * half-fail and orphan data. The dashboard, which reads those child
+ * collections live, drops the contact's contribution within a few seconds
+ * of the trigger running.
+ *
+ * Irreversible: there is no soft-delete or trash. The UI's confirm step is
+ * the only guard. `firestore.rules` allows any active user to delete a
+ * contact (the whole team, not just the owner/admins).
+ */
+export async function deleteContact(contactId: string): Promise<void> {
+  await deleteDoc(doc(db, 'contacts', contactId))
 }

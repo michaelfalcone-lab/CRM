@@ -17,6 +17,7 @@ import {
 import { useCurrentUser } from '../../app/AuthProvider'
 import {
   canEditRecord,
+  deleteContact,
   logContact,
   nextStatusInCycle,
   ownerLabel,
@@ -222,6 +223,12 @@ export function ContactListView() {
   /** The contact id whose status write is in flight, or `null` — so only
    * the clicked badge disables, not every badge in the table. */
   const [statusSaving, setStatusSaving] = useState<string | null>(null)
+  /** The contact id whose row is showing the "Permanently delete?" confirm,
+   * or `null`. Separate from `actionFor` so a row can't have both open. */
+  const [deleteFor, setDeleteFor] = useState<string | null>(null)
+  /** The contact id whose delete is in flight, or `null`. */
+  const [deleting, setDeleting] = useState<string | null>(null)
+  const [deleteError, setDeleteError] = useState<string | null>(null)
 
   const effectiveOwnerId = mineOnly ? user?.authUid ?? undefined : ownerFilter || undefined
 
@@ -265,6 +272,29 @@ export function ContactListView() {
       await updateContact(contact.id, { status: next })
     } finally {
       setStatusSaving(null)
+    }
+  }
+
+  /**
+   * Permanently deletes `contact`. Any active user may do this to any
+   * contact (see `firestore.rules`). The client removes only the
+   * `contacts/{id}` doc; the `onContactWrite` trigger cascades the removal
+   * of that contact's activities, opportunities, and notes, so the record
+   * also leaves the dashboard. The row disappears here via the live
+   * `useContacts` snapshot — no optimistic removal.
+   */
+  async function handleDeleteContact(contact: WithId<Contact>) {
+    if (deleting) return
+    setDeleting(contact.id)
+    setDeleteError(null)
+    try {
+      await deleteContact(contact.id)
+      setDeleteFor(null)
+      if (actionFor === contact.id) setActionFor(null)
+    } catch (err) {
+      setDeleteError(err instanceof Error ? err.message : 'Could not delete this contact. Please try again.')
+    } finally {
+      setDeleting(null)
     }
   }
 
@@ -427,21 +457,66 @@ export function ContactListView() {
                     <TableCell>{contactCounts.get(contact.id) ?? 0}</TableCell>
                     <TableCell>{contact.lastContactMode ?? '—'}</TableCell>
                     <TableCell>
-                      {canEditRecord(user, contact) && (
-                        <Button
-                          variant="secondary"
-                          onClick={() => {
-                            // Clear any note typed against a previously
-                            // opened row — the form's state is shared
-                            // across rows (see `actionFor`'s comment), so
-                            // without this the next contact inherits it.
-                            setActionNote('')
-                            setActionFor(contact.id)
-                          }}
-                          disabled={actionFor === contact.id}
-                        >
-                          Add Action
-                        </Button>
+                      {deleteFor === contact.id ? (
+                        <div className={styles.deleteConfirm}>
+                          <span>Permanently delete?</span>
+                          <Button
+                            variant="danger"
+                            disabled={deleting === contact.id}
+                            onClick={() => void handleDeleteContact(contact)}
+                          >
+                            {deleting === contact.id ? 'Deleting…' : 'Delete'}
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            disabled={deleting === contact.id}
+                            onClick={() => {
+                              setDeleteFor(null)
+                              setDeleteError(null)
+                            }}
+                          >
+                            Cancel
+                          </Button>
+                          {/* Inherits the red from `.deleteConfirm` — `styles.error`
+                              is white (see that rule's comment). */}
+                          {deleteError && <span>{deleteError}</span>}
+                        </div>
+                      ) : (
+                        <div className={styles.actionCell}>
+                          {canEditRecord(user, contact) && (
+                            <Button
+                              variant="secondary"
+                              onClick={() => {
+                                // Clear any note typed against a previously
+                                // opened row — the form's state is shared
+                                // across rows (see `actionFor`'s comment), so
+                                // without this the next contact inherits it.
+                                setActionNote('')
+                                setActionFor(contact.id)
+                              }}
+                              disabled={actionFor === contact.id}
+                            >
+                              Add Action
+                            </Button>
+                          )}
+                          {/* Team-wide delete: shown for every active user on
+                              every contact, not gated by `canEditRecord`. */}
+                          {user && (
+                            <Button
+                              variant="danger"
+                              className={styles.deleteX}
+                              aria-label={`Delete ${contact.firstName} ${contact.lastName}`}
+                              title="Delete this contact"
+                              onClick={() => {
+                                setActionFor(null)
+                                setDeleteError(null)
+                                setDeleteFor(contact.id)
+                              }}
+                            >
+                              ✕
+                            </Button>
+                          )}
+                        </div>
                       )}
                     </TableCell>
                   </TableRow>

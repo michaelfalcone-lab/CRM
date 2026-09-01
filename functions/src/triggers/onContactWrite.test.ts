@@ -17,8 +17,10 @@ async function snapshotFor(id: string) {
 
 describe('onContactWrite', () => {
   beforeEach(async () => {
-    const existing = await db.collection('contacts').listDocuments()
-    await Promise.all(existing.map((ref) => ref.delete()))
+    for (const name of ['contacts', 'activities', 'opportunities']) {
+      const existing = await db.collection(name).listDocuments()
+      await Promise.all(existing.map((ref) => ref.delete()))
+    }
   })
 
   it('computes nameLower and searchTokens on create, including org-name words', async () => {
@@ -137,5 +139,48 @@ describe('onContactWrite', () => {
     const result = (await snapshotFor(id)).data()!
     expect(result.nameLower).toBe('stale value')
     expect(result.searchTokens).toEqual(['stale-token'])
+  })
+
+  it('on delete, cascade-removes the contact’s activities, opportunities, and notes — and nothing else', async () => {
+    const id = 'casc-contact'
+    const ref = db.collection('contacts').doc(id)
+    await ref.set({
+      firstName: 'Casey',
+      lastName: 'Cascade',
+      ownerId: 'owner-1',
+      source: 'manual',
+      externalIds: { paciolanCustomerId: null },
+      mergedInto: null,
+      duplicateReviewStatus: null,
+      possibleDuplicateOf: null,
+      searchTokens: [],
+      nameLower: 'cascade casey',
+      createdAt: Timestamp.now(),
+      updatedAt: Timestamp.now(),
+      createdBy: 'owner-1',
+      importBatchId: null,
+    })
+    await db.collection('activities').doc('casc-act-1').set({ contactId: id, type: 'Email', ownerId: 'owner-1', occurredAt: Timestamp.now() })
+    await db.collection('activities').doc('casc-act-2').set({ contactId: id, type: 'Inbound Call', ownerId: 'owner-2', occurredAt: Timestamp.now() })
+    await db.collection('activities').doc('casc-act-other').set({ contactId: 'a-different-contact', type: 'Email', ownerId: 'owner-1', occurredAt: Timestamp.now() })
+    await db.collection('opportunities').doc('casc-opp-1').set({ contactId: id, sport: 'Football', stage: 'created', ownerId: 'owner-1', createdAt: Timestamp.now(), updatedAt: Timestamp.now(), createdBy: 'owner-1' })
+    await ref.collection('notes').doc('casc-note-1').set({ text: 'a note', authorId: 'owner-1', authorName: 'Owner One', createdAt: Timestamp.now() })
+
+    const before = await snapshotFor(id)
+    await ref.delete()
+    const after = await snapshotFor(id)
+
+    await onContactWrite.run(
+      firestoreWriteEvent('contacts/{contactId}', { contactId: id }, before, after),
+    )
+
+    expect((await db.collection('activities').doc('casc-act-1').get()).exists).toBe(false)
+    expect((await db.collection('activities').doc('casc-act-2').get()).exists).toBe(false)
+    expect((await db.collection('opportunities').doc('casc-opp-1').get()).exists).toBe(false)
+    expect((await ref.collection('notes').doc('casc-note-1').get()).exists).toBe(false)
+    // Another contact's activity is untouched.
+    expect((await db.collection('activities').doc('casc-act-other').get()).exists).toBe(true)
+
+    await db.collection('activities').doc('casc-act-other').delete()
   })
 })

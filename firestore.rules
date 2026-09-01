@@ -76,7 +76,14 @@ service cloud.firestore {
       allow read: if isActiveUser();
       allow create: if isActiveUser() && (isAdmin() || request.resource.data.ownerId == callerUid());
       allow update: if isAdmin() || (ownsRecord() && ownerUnchanged() && duplicateFieldsUnchanged());
-      allow delete: if isAdmin();
+      // Team-wide, not admin-only (unlike organizations/opportunities): the
+      // whole 5-person team may remove a contact straight from the list,
+      // including one another's. The client deletes only this doc; the
+      // `onContactWrite` trigger then cascade-deletes the contact's
+      // activities, opportunities, and notes with the Admin SDK — which is
+      // why those collections' delete rules stay unchanged (the client is
+      // never given a direct path to another rep's child docs).
+      allow delete: if isActiveUser();
 
       match /notes/{noteId} {
         allow read: if isActiveUser();

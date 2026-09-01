@@ -336,14 +336,17 @@ describe('create — ownerId enforcement (organizations, contacts, opportunities
 
 describe('update / delete — ownership + ownerId immutability (organizations, contacts, opportunities, activities)', () => {
   const fixtures = [
-    { name: 'organizations', docId: 'org-rep', repMayDeleteOwn: false },
-    { name: 'contacts', docId: 'contact-rep', repMayDeleteOwn: false },
-    { name: 'opportunities', docId: 'opp-rep', repMayDeleteOwn: false },
-    // The one exception: a rep may delete their OWN activity, so a
-    // mislogged entry can be removed from a contact's log without an
-    // admin. See `firestore.rules`' comment on the activities block, and
+    { name: 'organizations', docId: 'org-rep', repMayDeleteOwn: false, crossRepDeleteAllowed: false },
+    // Contacts are team-wide-deletable: any active user may remove any
+    // contact from the list, including another rep's. See the dedicated
+    // "contact delete — team-wide" describe below.
+    { name: 'contacts', docId: 'contact-rep', repMayDeleteOwn: true, crossRepDeleteAllowed: true },
+    { name: 'opportunities', docId: 'opp-rep', repMayDeleteOwn: false, crossRepDeleteAllowed: false },
+    // A rep may delete their OWN activity, so a mislogged entry can be
+    // removed from a contact's log without an admin — but not another
+    // rep's. See `firestore.rules`' comment on the activities block, and
     // the dedicated cases in the "activity delete" describe below.
-    { name: 'activities', docId: 'activity-rep', repMayDeleteOwn: true },
+    { name: 'activities', docId: 'activity-rep', repMayDeleteOwn: true, crossRepDeleteAllowed: false },
   ] as const
 
   for (const f of fixtures) {
@@ -374,16 +377,50 @@ describe('update / delete — ownership + ownerId immutability (organizations, c
       })
     }
 
-    it(`rep is denied deleting another rep's ${f.name}`, async () => {
-      const db = rep2().firestore()
-      await assertFails(deleteDoc(doc(db, f.name, f.docId)))
-    })
+    if (f.crossRepDeleteAllowed) {
+      it(`rep can delete another rep's ${f.name}`, async () => {
+        const db = rep2().firestore()
+        await assertSucceeds(deleteDoc(doc(db, f.name, f.docId)))
+      })
+    } else {
+      it(`rep is denied deleting another rep's ${f.name}`, async () => {
+        const db = rep2().firestore()
+        await assertFails(deleteDoc(doc(db, f.name, f.docId)))
+      })
+    }
 
     it(`admin can delete ${f.name}`, async () => {
       const db = admin().firestore()
       await assertSucceeds(deleteDoc(doc(db, f.name, f.docId)))
     })
   }
+})
+
+describe('contact delete — team-wide (any active user, incl. cross-rep)', () => {
+  it('a rep can delete their own contact', async () => {
+    const db = rep().firestore()
+    await assertSucceeds(deleteDoc(doc(db, 'contacts', 'contact-rep')))
+  })
+
+  it("a rep can delete another rep's contact", async () => {
+    const db = rep2().firestore()
+    await assertSucceeds(deleteDoc(doc(db, 'contacts', 'contact-rep')))
+  })
+
+  it('an admin can delete any contact', async () => {
+    const db = admin().firestore()
+    await assertSucceeds(deleteDoc(doc(db, 'contacts', 'contact-rep')))
+  })
+
+  it('an inactive user is denied deleting a contact', async () => {
+    const db = inactiveRep().firestore()
+    await assertFails(deleteDoc(doc(db, 'contacts', 'contact-rep')))
+  })
+
+  it('a signed-in user with no users doc is denied deleting a contact', async () => {
+    const db = ghost().firestore()
+    await assertFails(deleteDoc(doc(db, 'contacts', 'contact-rep')))
+  })
 })
 
 describe('activity delete — the rep-owned correction path', () => {

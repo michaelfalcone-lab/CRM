@@ -90,3 +90,32 @@
   cursor: default;
   opacity: 0.6;
 }
+
+/* "Add Action" and the delete ✕ sit side by side; the ✕ is last so it
+   reads as the rightmost affordance in the row, per the brief. */
+.actionCell {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+/* Square-ish, so the ✕ reads as an icon button rather than a text button
+   the width of "Add Action". */
+.deleteX {
+  padding: 0.5em 0.7em;
+  line-height: 1;
+}
+
+.deleteConfirm {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  white-space: nowrap;
+  font-family: var(--font-caption);
+  font-size: var(--font-size-small);
+  font-weight: 700;
+  /* `--color-danger-text` is white (it pairs with the danger button's red
+     fill); the confirm label sits on the white card, so use the brand red
+     directly. */
+  color: var(--brand-red);
+}

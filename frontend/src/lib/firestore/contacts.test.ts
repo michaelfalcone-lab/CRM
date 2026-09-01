@@ -18,6 +18,7 @@ import type { Contact } from 'shared'
 
 const addDocMock = vi.fn()
 const updateDocMock = vi.fn()
+const deleteDocMock = vi.fn()
 const collectionMock = vi.fn((...args: unknown[]) => ({ __collection: args.slice(1) }))
 const docMock = vi.fn((...args: unknown[]) => ({ __doc: args.slice(1) }))
 const batchUpdateMock = vi.fn()
@@ -39,6 +40,7 @@ const onSnapshotMock = vi.fn((_query: unknown, onNext: typeof snapshotCallback) 
 vi.mock('firebase/firestore', () => ({
   addDoc: (...args: unknown[]) => addDocMock(...args),
   updateDoc: (...args: unknown[]) => updateDocMock(...args),
+  deleteDoc: (...args: unknown[]) => deleteDocMock(...args),
   collection: (...args: unknown[]) => collectionMock(...args),
   doc: (...args: unknown[]) => docMock(...args),
   writeBatch: (...args: unknown[]) => writeBatchMock(...args),
@@ -61,6 +63,7 @@ import {
   ACTIVITY_TYPE_TO_LAST_CONTACT_MODE,
   createContact,
   deleteActivity,
+  deleteContact,
   logContact,
   updateContact,
   useContacts,
@@ -92,6 +95,7 @@ beforeEach(() => {
   vi.clearAllMocks()
   addDocMock.mockResolvedValue({ id: 'contact-new-1' })
   updateDocMock.mockResolvedValue(undefined)
+  deleteDocMock.mockResolvedValue(undefined)
   batchCommitMock.mockResolvedValue(undefined)
 })
 
@@ -350,6 +354,23 @@ describe('logContact', () => {
     await logContact('contact-1', 'Email', new Date(), { ...baseContext, organizationId: null })
     const activityPayload = batchSetMock.mock.calls[0]![1] as Record<string, unknown>
     expect(activityPayload.organizationId).toBeNull()
+  })
+})
+
+describe('deleteContact', () => {
+  it('deletes only the contacts/{id} doc — the cascade is the trigger job', async () => {
+    await deleteContact('contact-9')
+    expect(deleteDocMock).toHaveBeenCalledTimes(1)
+    expect(docMock).toHaveBeenCalledWith({}, 'contacts', 'contact-9')
+    // No client-side child deletes: it never opens a batch or touches
+    // activities/opportunities/notes.
+    expect(writeBatchMock).not.toHaveBeenCalled()
+    expect(batchDeleteMock).not.toHaveBeenCalled()
+  })
+
+  it('propagates a failure so the UI can show it', async () => {
+    deleteDocMock.mockRejectedValueOnce(new Error('permission-denied'))
+    await expect(deleteContact('contact-9')).rejects.toThrow('permission-denied')
   })
 })
 
