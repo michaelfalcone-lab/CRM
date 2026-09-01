@@ -36,5 +36,5 @@
   margin: 0;
   font-family: var(--font-caption);
   font-size: var(--font-size-caption);
-  color: var(--color-danger-text);
+  color: var(--color-danger-fg);
 }

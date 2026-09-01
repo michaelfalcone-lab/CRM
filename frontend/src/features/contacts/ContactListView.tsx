@@ -477,9 +477,7 @@ export function ContactListView() {
                           >
                             Cancel
                           </Button>
-                          {/* Inherits the red from `.deleteConfirm` — `styles.error`
-                              is white (see that rule's comment). */}
-                          {deleteError && <span>{deleteError}</span>}
+                          {deleteError && <span className={styles.error}>{deleteError}</span>}
                         </div>
                       ) : (
                         <div className={styles.actionCell}>

@@ -146,7 +146,14 @@
   --color-secondary-border: var(--gray-300);
 
   --color-danger-bg: var(--brand-red);
+  /* Text ON the danger background (white on red) — for filled controls:
+     the danger Button and Badge. */
   --color-danger-text: var(--brand-white);
+  /* Danger text on a LIGHT background (red on white) — for error/validation
+     messages, which sit on the page, not on a red fill. `--color-danger-text`
+     here would be white-on-white and invisible. Contrast of #c00404 on
+     white is ~5.9:1 (passes WCAG AA for body text). */
+  --color-danger-fg: var(--brand-red);
   --color-danger-border: var(--brand-red);
 
   --color-success-bg: #eaf6ec;

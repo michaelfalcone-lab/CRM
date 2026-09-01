@@ -43,10 +43,7 @@
 }
 
 .error {
-  /* Red text directly on the page's white background — NOT
-     `--color-danger-text` (white-on-red, meant for a filled badge), which
-     would be invisible here. */
-  color: var(--brand-red);
+  color: var(--color-danger-fg);
   margin-bottom: var(--space-4);
 }
 
