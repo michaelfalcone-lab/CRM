@@ -66,6 +66,55 @@
   color: var(--gray-700);
 }
 
+.error {
+  margin: 0;
+  color: var(--brand-red);
+  font-size: var(--font-size-small);
+}
+
+.rowActions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+/* Mirrors ContactActivityPanel.module.css's delete-confirm styling so the
+   two "correction" affordances read as the same pattern. */
+.confirm {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-family: var(--font-caption);
+  font-size: var(--font-size-caption);
+  color: var(--gray-700);
+  white-space: nowrap;
+}
+
+.confirmDelete,
+.confirmCancel {
+  background: none;
+  border: none;
+  padding: 0;
+  font: inherit;
+  cursor: pointer;
+  text-decoration: underline;
+}
+
+.confirmDelete {
+  color: var(--brand-red);
+  font-weight: 600;
+}
+
+.confirmCancel {
+  color: var(--gray-600);
+}
+
+.confirmDelete:disabled,
+.confirmCancel:disabled {
+  cursor: default;
+  opacity: 0.6;
+}
+
 /* The inline stage picker — narrow, and nudged to sit tight against the
    summary text since its own "Stage" label already sits above it. */
 .stageSelect {

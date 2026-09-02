@@ -9,6 +9,7 @@ import {
   YAxis,
   LabelList,
 } from 'recharts'
+import { useNavigate } from 'react-router-dom'
 import type { RepPipelineRow, StageLike } from './aggregations'
 import { DashboardPanel } from './DashboardPanel'
 import { floorForLabelAnchor, labelAnchorKey } from './labelAnchor'
@@ -59,6 +60,64 @@ function CategoryTick({ x, y, payload }: { x?: number; y?: number; payload?: { v
   )
 }
 
+/**
+ * The tooltip's rows, rendered here rather than through Recharts' default
+ * tooltip — same reasoning as `TotalOutputChart`'s `TooltipContent`: the
+ * `<Bar>`s below set no `name`, so the default tooltip falls back to the
+ * raw `dataKey` (a stage id like `"in-conversation"`), not the label the
+ * `<Legend>` two elements below already shows (`"In Conversation"`). Takes
+ * `stages` as a prop rather than closing over the outer component's copy
+ * so the id → label lookup is explicit and testable in isolation.
+ */
+function TooltipContent({
+  active,
+  payload,
+  label,
+  stages,
+  stageColors,
+}: {
+  active?: boolean
+  payload?: { dataKey?: string | number; value?: unknown }[]
+  label?: string
+  stages: StageLike[]
+  stageColors: Map<string, string>
+}) {
+  if (!active || !payload?.length) return null
+  return (
+    <div
+      style={{
+        background: VIZ_TOOLTIP_BG,
+        border: `1px solid ${VIZ_TOOLTIP_BORDER}`,
+        borderRadius: 'var(--radius-sm)',
+        padding: '8px 10px',
+        color: VIZ_TOOLTIP_TEXT,
+      }}
+    >
+      <div style={{ fontWeight: 700, marginBottom: 4 }}>{label}</div>
+      {payload.map((entry) => {
+        const stage = stages.find((s) => s.id === entry.dataKey)
+        const name = stage?.label ?? String(entry.dataKey ?? '')
+        const value = typeof entry.value === 'number' ? Math.round(entry.value) : entry.value
+        return (
+          <div
+            key={String(entry.dataKey)}
+            style={{
+              display: 'flex',
+              justifyContent: 'space-between',
+              gap: 12,
+              fontSize: 12,
+              lineHeight: 1.6,
+            }}
+          >
+            <span style={{ color: stageColors.get(String(entry.dataKey)) }}>{name}</span>
+            <span>{String(value)}</span>
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
 /** Pipeline — rep vs. rep: one horizontal stacked bar per rep, segmented
  * by current stage. Scope (which opportunities are included at all) is
  * decided by the caller via `computePipeline`'s deduplicated union of the
@@ -85,12 +144,18 @@ function CategoryTick({ x, y, payload }: { x?: number; y?: number; payload?: { v
  * `<Bar>` map read the SAME `ANCHOR_STAGE_ID`, computed once via
  * `labelAnchor.ts` — see that module's doc comment for why the two
  * decisions must never be made independently (an admin can add stages
- * beyond the 5 seeded ones, so this can't assume a fixed stage count). */
+ * beyond the 5 seeded ones, so this can't assume a fixed stage count).
+ *
+ * Clicking any segment of a rep's bar navigates to `/opportunities`
+ * pre-filtered to that rep (`?owner=<ownerId>`) — the only way to get from
+ * an aggregate count here to the individual opportunities behind it. */
 export function PipelineChart({ rows, stages }: PipelineChartProps) {
+  const navigate = useNavigate()
   const stageColors = colorForStages(stages)
   const ANCHOR_STAGE_ID = labelAnchorKey(stages.map((stage) => stage.id))
   const data = rows.map((row) => ({
     displayName: row.displayName,
+    ownerId: row.ownerId,
     total: row.total,
     // Floor only `byStage` (a real `Record<string, number>`, unlike the
     // merged object below, which loses its index signature the moment
@@ -130,12 +195,7 @@ export function PipelineChart({ rows, stages }: PipelineChartProps) {
               axisLine={{ stroke: VIZ_GRID_LINE }}
               tickLine={false}
             />
-            <Tooltip
-              formatter={(value, name) => [typeof value === 'number' ? Math.round(value) : value, name]}
-              contentStyle={{ background: VIZ_TOOLTIP_BG, border: `1px solid ${VIZ_TOOLTIP_BORDER}` }}
-              labelStyle={{ color: VIZ_TOOLTIP_TEXT, fontWeight: 700 }}
-              itemStyle={{ color: VIZ_TOOLTIP_TEXT }}
-            />
+            <Tooltip content={<TooltipContent stages={stages} stageColors={stageColors} />} />
             <Legend
               formatter={(value) => stages.find((s) => s.id === value)?.label ?? value}
               wrapperStyle={{ color: VIZ_AXIS_TEXT, fontSize: 12 }}
@@ -147,6 +207,11 @@ export function PipelineChart({ rows, stages }: PipelineChartProps) {
                 stackId="pipeline"
                 fill={stageColors.get(stage.id)}
                 isAnimationActive={false}
+                cursor="pointer"
+                onClick={(barData: { payload?: { ownerId: string } }) => {
+                  const ownerId = barData.payload?.ownerId
+                  if (ownerId) navigate(`/opportunities?owner=${ownerId}`)
+                }}
               >
                 {stage.id === ANCHOR_STAGE_ID && (
                   <LabelList

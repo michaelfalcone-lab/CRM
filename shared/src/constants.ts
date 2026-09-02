@@ -122,4 +122,4 @@ export const PRODUCT_TYPES: readonly ProductType[] = [
  * schedule, not on January 1st. Extend it when the next season opens —
  * existing documents keep whatever year they were created with.
  */
-export const OPPORTUNITY_YEARS: readonly string[] = ['2026', '2027']
+export const OPPORTUNITY_YEARS: readonly string[] = ['2026', '2027', '2028']

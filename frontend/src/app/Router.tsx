@@ -2,6 +2,7 @@ import { Navigate, Route, Routes } from 'react-router-dom'
 import { DashboardPage } from '../features/dashboard'
 import { ContactsPage } from '../features/contacts'
 import { OrganizationsPage } from '../features/organizations'
+import { OpportunitiesListView } from '../features/opportunities'
 import { ImportPage } from '../features/import'
 import { UsersPage } from '../features/users'
 import { StatusesPage } from '../features/statuses'
@@ -27,6 +28,7 @@ export function AppRoutes() {
           (list/detail/add/edit) — see ContactsPage/OrganizationsPage. */}
       <Route path="/contacts/*" element={<ContactsPage />} />
       <Route path="/organizations/*" element={<OrganizationsPage />} />
+      <Route path="/opportunities" element={<OpportunitiesListView />} />
       <Route path="/import" element={<ImportPage />} />
       <Route
         path="/users"

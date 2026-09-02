@@ -221,15 +221,16 @@ export interface ResponseActivityLike {
 
 /**
  * The dashboard's "Connection Rate": of every contact the team owns, what
- * share have actually connected back (answered, replied, or returned a
- * voicemail). Formerly labelled "Win Rate" — same calculation.
+ * share connected back (answered, replied, or returned a voicemail) during
+ * the selected period. Formerly labelled "Win Rate" — same calculation.
  *
- * Deliberately NOT period-scoped, unlike every other widget — it answers
- * "of everyone we're responsible for, how many have ever engaged", which
- * is a coverage question, not a this-month question. Both halves are
- * all-time so the ratio stays internally consistent; a windowed numerator
- * over an all-time denominator would drift toward zero as the window
- * shrinks and read as a collapse in performance.
+ * Half period-scoped, half not, on purpose: `contacts` (the denominator)
+ * stays all-time — "everyone we're responsible for" shouldn't shrink just
+ * because a narrow period is selected — but `activities` (the numerator)
+ * IS period-scoped, so the rate answers "of everyone we own, how many did
+ * we hear from during this period", and legitimately reads low on narrow
+ * ranges like "Today". Callers must pass a period-scoped `activities` array
+ * (`useDashboardData`'s `responseActivities`) for this to be meaningful.
  *
  * Counts distinct CONTACTS, not activities — five replies from one
  * prospect is one responsive contact, not five. `connectedCount` can
@@ -401,4 +402,56 @@ export function computePipeline(
   }
 
   return { rows: reps.map((rep) => rows.get(rep.ownerId)!), stages: orderedStages }
+}
+
+// ---------------------------------------------------------------------------
+// Widget 5: Organization Interest — organizations ranked by opportunity count
+// ---------------------------------------------------------------------------
+
+export interface OrgOpportunityLike {
+  id: string
+  organizationId: string | null
+}
+
+export interface OrganizationLike {
+  id: string
+  name: string
+}
+
+export interface OrgInterestRow {
+  organizationId: string
+  name: string
+  total: number
+}
+
+/**
+ * All-time (not period-scoped, unlike every other widget here — this is
+ * explicitly org-level and independent of the dashboard's period selector),
+ * ranked descending by opportunity count. Opportunities with no
+ * `organizationId` (contact-only pursuits — see `Opportunity`'s doc comment
+ * in `shared/src/types.ts`) are excluded entirely; they have no
+ * organization to rank. Only orgs with at least one opportunity produce a
+ * row, unlike `computePipeline`'s reps — there's no fixed "every org" set
+ * to zero-fill from the way there's a fixed rep directory.
+ */
+export function computeOrgOpportunityRanking(
+  opportunities: OrgOpportunityLike[],
+  organizations: OrganizationLike[],
+  limit: number,
+): OrgInterestRow[] {
+  const nameById = new Map(organizations.map((org) => [org.id, org.name]))
+  const totals = new Map<string, number>()
+  for (const opp of opportunities) {
+    if (!opp.organizationId) continue
+    totals.set(opp.organizationId, (totals.get(opp.organizationId) ?? 0) + 1)
+  }
+
+  return [...totals.entries()]
+    .map(([organizationId, total]) => ({
+      organizationId,
+      name: nameById.get(organizationId) ?? 'Organization',
+      total,
+    }))
+    .sort((a, b) => b.total - a.total)
+    .slice(0, limit)
 }

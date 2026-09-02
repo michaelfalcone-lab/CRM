@@ -17,12 +17,16 @@ import { PipelineChart } from './PipelineChart'
 import { TotalOutputChart } from './TotalOutputChart'
 import { useDashboardData } from './useDashboardData'
 import { ConnectionRateGauge } from './ConnectionRateGauge'
+import { OrganizationInterestPanel } from './OrganizationInterestPanel'
+import { WelcomeBanner } from './WelcomeBanner'
 
 /**
- * The sales-output dashboard: period selector above four widgets (Total
- * Output, Connection Rate, Conversion & Results, Pipeline rep-vs-rep). Open to
- * any active linked user — no `RequireAdmin` — and identical for every
- * role, per the brief; the app's default route (`/`).
+ * The sales-output dashboard: period selector above four period-scoped
+ * widgets (Total Output, Connection Rate, Conversion & Results, Pipeline
+ * rep-vs-rep) plus one all-time widget (Organization Interest, independent
+ * of the period selector — see its own doc comment). Open to any active
+ * linked user — no `RequireAdmin` — and identical for every role, per the
+ * brief; the app's default route (`/`).
  *
  * Owns the period-selection state (`preset` plus, for `'custom'`, the two
  * raw date-input strings) "above the fetching hook" per the brief:
@@ -33,9 +37,12 @@ export function DashboardPage() {
   const { user } = useCurrentUser()
   const { owners, loading: ownersLoading } = useOwnerDirectory(user)
   const { stages, loading: stagesLoading } = useOpportunityStages()
-  // Unfiltered and NOT period-scoped: the Connection Rate widget's denominator is
-  // every contact the team owns, all time. `useContacts` already drops
-  // merged-away duplicates, which must not inflate the denominator.
+  // Unfiltered and NOT period-scoped: the Connection Rate widget's
+  // denominator is every contact the team owns, all time — this stays fixed
+  // regardless of the selected period. `useContacts` already drops
+  // merged-away duplicates, which must not inflate the denominator. The
+  // widget's numerator (response activities), by contrast, IS period-scoped
+  // — see `data.responseActivities` in `useDashboardData.ts`.
   const { contacts, loading: contactsLoading } = useContacts()
 
   const [preset, setPreset] = useState<PeriodPreset>('overall')
@@ -114,6 +121,7 @@ export function DashboardPage() {
 
   return (
     <div className={styles.page}>
+      <WelcomeBanner />
       <h2>Sales Output Dashboard</h2>
 
       <PeriodSelector
@@ -149,6 +157,9 @@ export function DashboardPage() {
           </div>
           <div className={styles.results}>
             <ConversionResultsTable result={conversionResults} />
+          </div>
+          <div className={styles.orgInterest}>
+            <OrganizationInterestPanel />
           </div>
         </div>
       )}

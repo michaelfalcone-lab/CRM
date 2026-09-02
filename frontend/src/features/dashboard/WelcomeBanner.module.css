@@ -1,0 +1,25 @@
+.banner {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  margin-bottom: var(--space-5);
+}
+
+.logo {
+  width: 48px;
+  height: 48px;
+  object-fit: contain;
+  flex-shrink: 0;
+}
+
+.greeting {
+  font-family: var(--font-heading, var(--font-body));
+  font-size: var(--font-size-h4);
+  color: var(--brand-brown);
+}
+
+.position {
+  font-family: var(--font-caption);
+  font-size: var(--font-size-small);
+  color: var(--gray-500);
+}

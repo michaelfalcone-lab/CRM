@@ -50,6 +50,7 @@ describe('AppShell', () => {
     expect(screen.getByText('Sales Rep')).toBeInTheDocument()
     expect(screen.getByRole('link', { name: 'Contacts' })).toBeInTheDocument()
     expect(screen.getByRole('link', { name: 'Organizations' })).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'Opportunities' })).toBeInTheDocument()
     expect(screen.getByRole('link', { name: 'Import' })).toBeInTheDocument()
     // Duplicates is visible to every active user (Task 10) — this build has
     // no read-visibility gates, only the worklist's two resolving actions

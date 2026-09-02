@@ -341,7 +341,11 @@ describe('update / delete — ownership + ownerId immutability (organizations, c
     // contact from the list, including another rep's. See the dedicated
     // "contact delete — team-wide" describe below.
     { name: 'contacts', docId: 'contact-rep', repMayDeleteOwn: true, crossRepDeleteAllowed: true },
-    { name: 'opportunities', docId: 'opp-rep', repMayDeleteOwn: false, crossRepDeleteAllowed: false },
+    // A rep may delete their OWN opportunity, so a mis-entered one can be
+    // corrected without an admin — but not another rep's. See
+    // `firestore.rules`' comment on the opportunities block, and the
+    // dedicated cases in the "opportunity delete" describe below.
+    { name: 'opportunities', docId: 'opp-rep', repMayDeleteOwn: true, crossRepDeleteAllowed: false },
     // A rep may delete their OWN activity, so a mislogged entry can be
     // removed from a contact's log without an admin — but not another
     // rep's. See `firestore.rules`' comment on the activities block, and
@@ -420,6 +424,28 @@ describe('contact delete — team-wide (any active user, incl. cross-rep)', () =
   it('a signed-in user with no users doc is denied deleting a contact', async () => {
     const db = ghost().firestore()
     await assertFails(deleteDoc(doc(db, 'contacts', 'contact-rep')))
+  })
+})
+
+describe('opportunity delete — the rep-owned correction path', () => {
+  it('rep can delete their own opportunity (a mis-entered one)', async () => {
+    const db = rep().firestore()
+    await assertSucceeds(deleteDoc(doc(db, 'opportunities', 'opp-rep')))
+  })
+
+  it("rep is denied deleting another rep's opportunity", async () => {
+    const db = rep2().firestore()
+    await assertFails(deleteDoc(doc(db, 'opportunities', 'opp-rep')))
+  })
+
+  it('admin can delete any opportunity', async () => {
+    const db = admin().firestore()
+    await assertSucceeds(deleteDoc(doc(db, 'opportunities', 'opp-rep')))
+  })
+
+  it('an inactive user is denied deleting an opportunity', async () => {
+    const db = inactiveRep().firestore()
+    await assertFails(deleteDoc(doc(db, 'opportunities', 'opp-rep')))
   })
 })
 

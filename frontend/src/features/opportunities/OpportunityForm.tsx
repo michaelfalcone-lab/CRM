@@ -4,6 +4,7 @@ import { z } from 'zod'
 import { OPPORTUNITY_YEARS, PRODUCT_TYPES, type Opportunity, type Sport } from 'shared'
 import { Button, Select, TextArea } from '../../components/ui'
 import { createOpportunity, updateOpportunity, useOpportunityStages, type WithId } from '../../lib'
+import { formatOpportunityYear } from './formatOpportunityYear'
 import { SPORTS } from './sports'
 import styles from './OpportunityForm.module.css'
 
@@ -64,6 +65,7 @@ export function OpportunityForm({
   const {
     register,
     handleSubmit,
+    watch,
     formState: { errors, isSubmitting },
     setError,
   } = useForm<FormValues>({
@@ -83,7 +85,14 @@ export function OpportunityForm({
   })
 
   const sportOptions = SPORTS.map((s) => ({ value: s, label: s }))
-  const yearOptions = OPPORTUNITY_YEARS.map((y) => ({ value: y, label: y }))
+  // Once a sport is picked, its year options read as a season span for
+  // basketball (e.g. "2026/27") — see `formatOpportunityYear`. Before a
+  // sport is chosen, `watchedSport` is '', which formats as a plain year.
+  const watchedSport = watch('sport') as Sport
+  const yearOptions = OPPORTUNITY_YEARS.map((y) => ({
+    value: y,
+    label: formatOpportunityYear(watchedSport, y) ?? y,
+  }))
   const productOptions = PRODUCT_TYPES.map((p) => ({ value: p, label: p }))
   const stageOptions = stages.map((s) => ({ value: s.id, label: s.label }))
   if (existing && !stageOptions.some((o) => o.value === existing.stage)) {

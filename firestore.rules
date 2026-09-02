@@ -98,7 +98,11 @@ service cloud.firestore {
       allow read: if isActiveUser();
       allow create: if isActiveUser() && (isAdmin() || request.resource.data.ownerId == callerUid());
       allow update: if isAdmin() || (ownsRecord() && ownerUnchanged());
-      allow delete: if isAdmin();
+      // Wider than admin-only, on purpose — mirrors `activities` below: a
+      // rep's own mis-entered opportunity is a correction, not an
+      // administrative act, so the owning rep may remove their own, and
+      // only their own.
+      allow delete: if isAdmin() || ownsRecord();
     }
 
     match /activities/{activityId} {

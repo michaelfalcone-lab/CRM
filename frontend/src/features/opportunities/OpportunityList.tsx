@@ -1,7 +1,14 @@
 import { useState } from 'react'
 import type { Opportunity, User } from 'shared'
 import { Button, Card, Select } from '../../components/ui'
-import { canEditRecord, updateOpportunity, useOpportunityStages, type WithId } from '../../lib'
+import {
+  canEditRecord,
+  deleteOpportunity,
+  updateOpportunity,
+  useOpportunityStages,
+  type WithId,
+} from '../../lib'
+import { formatOpportunityYear } from './formatOpportunityYear'
 import { OpportunityForm } from './OpportunityForm'
 import { StageBadge } from './StageBadge'
 import styles from './OpportunityList.module.css'
@@ -21,9 +28,12 @@ export interface OpportunityListProps {
 
 /** Sport · year · product, joined for the row's one-line summary. Skips
  * blanks so an opportunity created before year/productType existed reads
- * as just its sport rather than "Football ·  · ". */
+ * as just its sport rather than "Football ·  · ". Year renders through
+ * `formatOpportunityYear` so basketball reads as a season span. */
 function summarize(opp: WithId<Opportunity>): string {
-  return [opp.sport, opp.year, opp.productType].filter(Boolean).join(' · ')
+  return [opp.sport, formatOpportunityYear(opp.sport, opp.year), opp.productType]
+    .filter(Boolean)
+    .join(' · ')
 }
 
 /** Compact opportunity list (sport/year/product + a one-click stage
@@ -44,6 +54,26 @@ export function OpportunityList({
   const [editingId, setEditingId] = useState<string | null>(null)
   /** The opportunity whose stage write is in flight, or `null`. */
   const [stageSavingId, setStageSavingId] = useState<string | null>(null)
+  /** The opportunity awaiting delete confirmation, or `null` — same
+   * two-step pattern as `ContactActivityPanel`'s log-entry delete: a
+   * second click confirms, opening a different row's confirm replaces it. */
+  const [confirmingDeleteId, setConfirmingDeleteId] = useState<string | null>(null)
+  const [deletingId, setDeletingId] = useState<string | null>(null)
+  const [deleteError, setDeleteError] = useState<string | null>(null)
+
+  async function handleDelete(opp: WithId<Opportunity>) {
+    if (deletingId) return
+    setDeletingId(opp.id)
+    setDeleteError(null)
+    try {
+      await deleteOpportunity(opp.id)
+      setConfirmingDeleteId(null)
+    } catch (err) {
+      setDeleteError(err instanceof Error ? err.message : 'Could not delete this opportunity.')
+    } finally {
+      setDeletingId(null)
+    }
+  }
 
   async function handleStageChange(opp: WithId<Opportunity>, nextStage: string) {
     if (stageSavingId || nextStage === opp.stage) return
@@ -77,6 +107,8 @@ export function OpportunityList({
       {!canAdd && !adding && opportunities.length === 0 && (
         <p className={styles.empty}>Add a contact to this organization first.</p>
       )}
+
+      {deleteError && <p className={styles.error}>{deleteError}</p>}
 
       {adding && (
         <Card className={styles.formCard}>
@@ -148,9 +180,42 @@ export function OpportunityList({
                     </div>
                     {opp.note && <p className={styles.note}>{opp.note}</p>}
                     {canEdit && (
-                      <Button variant="ghost" onClick={() => setEditingId(opp.id)}>
-                        Edit
-                      </Button>
+                      <div className={styles.rowActions}>
+                        <Button variant="ghost" onClick={() => setEditingId(opp.id)}>
+                          Edit
+                        </Button>
+                        {confirmingDeleteId === opp.id ? (
+                          <span className={styles.confirm}>
+                            Delete this opportunity?
+                            <button
+                              type="button"
+                              className={styles.confirmDelete}
+                              disabled={deletingId === opp.id}
+                              onClick={() => void handleDelete(opp)}
+                            >
+                              Delete
+                            </button>
+                            <button
+                              type="button"
+                              className={styles.confirmCancel}
+                              disabled={deletingId === opp.id}
+                              onClick={() => setConfirmingDeleteId(null)}
+                            >
+                              Cancel
+                            </button>
+                          </span>
+                        ) : (
+                          <Button
+                            variant="ghost"
+                            onClick={() => {
+                              setDeleteError(null)
+                              setConfirmingDeleteId(opp.id)
+                            }}
+                          >
+                            Delete
+                          </Button>
+                        )}
+                      </div>
                     )}
                   </>
                 )}

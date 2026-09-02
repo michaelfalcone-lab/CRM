@@ -27,7 +27,7 @@ describe('seedUsers', () => {
 
     const snap = await db.collection('users').get()
     expect(snap.docs.map((d) => d.id).sort()).toEqual(
-      ['kimberly_dieroff@brown.edu', 'jeremy_blake-johnson@brown.edu', 'michael_woodley@brown.edu', 'jordan_sullivan@brown.edu'].sort(),
+      TEAM_USERS.map((u) => u.email.toLowerCase()).sort(),
     )
   })
 
@@ -71,7 +71,9 @@ describe('seedUsers', () => {
     const result = await seedUsers(db)
     expect(result.skipped).toEqual(['kimberly_dieroff@brown.edu'])
     expect(result.created.sort()).toEqual(
-      ['jeremy_blake-johnson@brown.edu', 'michael_woodley@brown.edu', 'jordan_sullivan@brown.edu'].sort(),
+      TEAM_USERS.filter((u) => u.email !== 'kimberly_dieroff@brown.edu')
+        .map((u) => u.email.toLowerCase())
+        .sort(),
     )
 
     // Untouched: still has its linked uid and hand-set position.

@@ -2,12 +2,15 @@ import { describe, expect, it } from 'vitest'
 import type { ActivityType, FirestoreTimestamp } from 'shared'
 import {
   computeConversionResults,
+  computeOrgOpportunityRanking,
   computePipeline,
   computeTotalOutput,
   computeConnectionRate,
   unionOpportunities,
   type ActivityLike,
   type OpportunityLike,
+  type OrganizationLike,
+  type OrgOpportunityLike,
   type RepDirectoryEntry,
   type StageLike,
 } from './aggregations'
@@ -403,5 +406,42 @@ describe('computePipeline', () => {
     expect(
       Object.values(alice.byStage).reduce((a, b) => a + b, 0),
     ).toBe(alice.total) // segments always sum to total
+  })
+})
+
+describe('computeOrgOpportunityRanking', () => {
+  const ORG_A: OrganizationLike = { id: 'org-a', name: 'Acme Co' }
+  const ORG_B: OrganizationLike = { id: 'org-b', name: 'Beta Inc' }
+
+  function orgOpp(organizationId: string | null): OrgOpportunityLike {
+    nextId += 1
+    return { id: `opp-${nextId}`, organizationId }
+  }
+
+  it('ranks organizations descending by opportunity count', () => {
+    const opportunities = [orgOpp('org-a'), orgOpp('org-a'), orgOpp('org-b')]
+    const rows = computeOrgOpportunityRanking(opportunities, [ORG_A, ORG_B], 10)
+    expect(rows).toEqual([
+      { organizationId: 'org-a', name: 'Acme Co', total: 2 },
+      { organizationId: 'org-b', name: 'Beta Inc', total: 1 },
+    ])
+  })
+
+  it('excludes opportunities with no organizationId (contact-only pursuits)', () => {
+    const opportunities = [orgOpp(null), orgOpp('org-a')]
+    const rows = computeOrgOpportunityRanking(opportunities, [ORG_A], 10)
+    expect(rows).toEqual([{ organizationId: 'org-a', name: 'Acme Co', total: 1 }])
+  })
+
+  it('only produces rows for organizations with at least one opportunity — no zero-fill', () => {
+    const rows = computeOrgOpportunityRanking([orgOpp('org-a')], [ORG_A, ORG_B], 10)
+    expect(rows).toHaveLength(1)
+    expect(rows[0]!.organizationId).toBe('org-a')
+  })
+
+  it('respects the limit, keeping only the top N after sorting', () => {
+    const opportunities = [orgOpp('org-a'), orgOpp('org-a'), orgOpp('org-b')]
+    const rows = computeOrgOpportunityRanking(opportunities, [ORG_A, ORG_B], 1)
+    expect(rows).toEqual([{ organizationId: 'org-a', name: 'Acme Co', total: 2 }])
   })
 })

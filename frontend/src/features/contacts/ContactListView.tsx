@@ -1,5 +1,5 @@
 import { Fragment, useMemo, useState } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { ACTIVITY_TYPES, type ActivityType, type Contact, type FirestoreTimestamp } from 'shared'
 import {
   Badge,
@@ -87,6 +87,22 @@ export function sortByLastContactedFirst(contacts: WithId<Contact>[]): WithId<Co
  * deliberately absent — it stays display-only. */
 export type SortKey = 'name' | 'organization' | 'status' | 'owner' | 'lastContact' | 'timesContacted'
 export type SortDirection = 'asc' | 'desc'
+
+const SORT_KEYS: readonly SortKey[] = [
+  'name',
+  'organization',
+  'status',
+  'owner',
+  'lastContact',
+  'timesContacted',
+]
+
+/** Guards a raw `?sortKey=` URL param against the known `SortKey` values —
+ * an old bookmark, a hand-edited URL, or a stale link must fall back to the
+ * default sort rather than feeding an arbitrary string into `sortContacts`. */
+function isSortKey(value: string | null): value is SortKey {
+  return value !== null && (SORT_KEYS as readonly string[]).includes(value)
+}
 
 /** The sortable header columns, in display order — they occupy the first
  * six columns, ahead of the display-only Contact Method and the Action
@@ -199,17 +215,37 @@ export function ContactListView() {
   const { owners } = useOwnerDirectory(user)
   const isAdmin = user?.role === 'admin'
 
-  const [statusFilter, setStatusFilter] = useState('')
-  const [ownerFilter, setOwnerFilter] = useState('')
-  const [mineOnly, setMineOnly] = useState(false)
-  /** Starts on the default sort rather than `null` so the Name header
-   * shows its active arrow and `aria-sort` from first paint — the list IS
-   * sorted by name on load, and a header that claimed otherwise would be
-   * lying to both sighted users and screen readers. */
-  const [sort, setSort] = useState<{ key: SortKey; direction: SortDirection }>({
-    key: 'name',
-    direction: 'asc',
-  })
+  // Sort + filters live in the URL (`?status=`/`?owner=`/`?mine=`/`?sortKey=`/
+  // `?sortDir=`), not local `useState` — `ContactListView` and
+  // `ContactDetailView` are sibling routes (see `ContactsPage.tsx`), so
+  // opening a contact fully unmounts this component and destroys any local
+  // state before Back is ever pressed. URL state survives that unmount/
+  // remount, the same reason `OpportunitiesListView`'s Owner filter already
+  // does this.
+  const [searchParams, setSearchParams] = useSearchParams()
+
+  function updateParams(updates: Record<string, string | null>) {
+    setSearchParams((prev) => {
+      const next = new URLSearchParams(prev)
+      for (const [key, value] of Object.entries(updates)) {
+        if (value === null || value === '') next.delete(key)
+        else next.set(key, value)
+      }
+      return next
+    })
+  }
+
+  const statusFilter = searchParams.get('status') ?? ''
+  const ownerFilter = searchParams.get('owner') ?? ''
+  const mineOnly = searchParams.get('mine') === '1'
+  /** Falls back to the default sort (name, ascending) when the URL has no
+   * sort params yet (first visit) or an invalid `sortKey` — the Name header
+   * still shows its active arrow and `aria-sort` from first paint either
+   * way, so a header never lies about which column is actually sorting. */
+  const sort: { key: SortKey; direction: SortDirection } = {
+    key: isSortKey(searchParams.get('sortKey')) ? (searchParams.get('sortKey') as SortKey) : 'name',
+    direction: searchParams.get('sortDir') === 'desc' ? 'desc' : 'asc',
+  }
   /** The contact id whose inline Add Action form is open, or `null`. Only
    * one row expands at a time — the form's date/type state is shared
    * rather than per-row, which is why opening a second row would silently
@@ -243,11 +279,9 @@ export function ContactListView() {
   )
 
   function toggleSort(key: SortKey) {
-    setSort((current) =>
-      current.key === key
-        ? { key, direction: current.direction === 'asc' ? 'desc' : 'asc' }
-        : { key, direction: 'asc' },
-    )
+    const direction: SortDirection =
+      sort.key === key ? (sort.direction === 'asc' ? 'desc' : 'asc') : 'asc'
+    updateParams({ sortKey: key, sortDir: direction })
   }
 
   /**
@@ -347,7 +381,7 @@ export function ContactListView() {
           options={statusOptions}
           placeholder="All statuses"
           value={statusFilter}
-          onChange={(e) => setStatusFilter(e.target.value)}
+          onChange={(e) => updateParams({ status: e.target.value })}
         />
         {isAdmin && (
           <Select
@@ -357,7 +391,7 @@ export function ContactListView() {
             options={ownerOptions}
             placeholder="All owners"
             value={ownerFilter}
-            onChange={(e) => setOwnerFilter(e.target.value)}
+            onChange={(e) => updateParams({ owner: e.target.value })}
             disabled={mineOnly}
           />
         )}
@@ -365,10 +399,9 @@ export function ContactListView() {
           <input
             type="checkbox"
             checked={mineOnly}
-            onChange={(e) => {
-              setMineOnly(e.target.checked)
-              if (e.target.checked) setOwnerFilter('')
-            }}
+            onChange={(e) =>
+              updateParams({ mine: e.target.checked ? '1' : null, owner: e.target.checked ? null : ownerFilter })
+            }
           />
           My contacts
         </label>

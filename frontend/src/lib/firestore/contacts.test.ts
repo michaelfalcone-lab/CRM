@@ -19,6 +19,7 @@ import type { Contact } from 'shared'
 const addDocMock = vi.fn()
 const updateDocMock = vi.fn()
 const deleteDocMock = vi.fn()
+const getDocsMock = vi.fn()
 const collectionMock = vi.fn((...args: unknown[]) => ({ __collection: args.slice(1) }))
 const docMock = vi.fn((...args: unknown[]) => ({ __doc: args.slice(1) }))
 const batchUpdateMock = vi.fn()
@@ -41,6 +42,7 @@ vi.mock('firebase/firestore', () => ({
   addDoc: (...args: unknown[]) => addDocMock(...args),
   updateDoc: (...args: unknown[]) => updateDocMock(...args),
   deleteDoc: (...args: unknown[]) => deleteDocMock(...args),
+  getDocs: (...args: unknown[]) => getDocsMock(...args),
   collection: (...args: unknown[]) => collectionMock(...args),
   doc: (...args: unknown[]) => docMock(...args),
   writeBatch: (...args: unknown[]) => writeBatchMock(...args),
@@ -97,6 +99,11 @@ beforeEach(() => {
   updateDocMock.mockResolvedValue(undefined)
   deleteDocMock.mockResolvedValue(undefined)
   batchCommitMock.mockResolvedValue(undefined)
+  // Default: no opportunities/activities found, so `logContact`'s
+  // opportunity-stage-advancement check is a no-op unless a test overrides
+  // this — matches "a contact with no Created opportunities" being the
+  // common case across every test that doesn't care about this feature.
+  getDocsMock.mockResolvedValue({ docs: [] })
 })
 
 describe('createContact', () => {
@@ -348,6 +355,79 @@ describe('logContact', () => {
     await logContact('contact-1', 'Email', new Date(), { ...baseContext, note: '  Left a message  ' })
     const activityPayload = batchSetMock.mock.calls[0]![1] as Record<string, unknown>
     expect(activityPayload.note).toBe('Left a message')
+  })
+
+  describe('opportunity stage advancement (Created -> In Conversation)', () => {
+    /** A fake `opportunities` query-snapshot doc. */
+    function oppDoc(id: string, stage: string) {
+      return { id, data: () => ({ stage }) }
+    }
+    /** A fake `activities` query-snapshot doc. */
+    function actDoc(type: string, occurredAtSeconds: number) {
+      return { data: () => ({ type, occurredAt: { seconds: occurredAtSeconds, nanoseconds: 0 } }) }
+    }
+    /** The stage-advancement write, if `logContact` made one — the contact
+     * patch is always `batchUpdateMock`'s call 0, so an opportunity update
+     * (when present) is always call 1. */
+    function stageUpdate(): [unknown, Record<string, unknown>] | undefined {
+      return batchUpdateMock.mock.calls[1] as [unknown, Record<string, unknown>] | undefined
+    }
+
+    it('never queries opportunities for a non-response activity type (short-circuits on WIN_ACTIVITY_TYPES)', async () => {
+      await logContact('contact-1', 'Outbound Call - VM', new Date(), baseContext)
+      expect(getDocsMock).not.toHaveBeenCalled()
+    })
+
+    it('advances the sole Created opportunity immediately on an answered call', async () => {
+      getDocsMock.mockResolvedValueOnce({ docs: [oppDoc('opp-1', 'created')] })
+      await logContact('contact-1', 'Inbound Call', new Date(), baseContext)
+      const update = stageUpdate()
+      expect(update).toBeDefined()
+      expect(update![1]).toMatchObject({ stage: 'in-conversation' })
+    })
+
+    it('does nothing when the contact has zero Created opportunities', async () => {
+      getDocsMock.mockResolvedValueOnce({ docs: [oppDoc('opp-1', 'won')] })
+      await logContact('contact-1', 'Inbound Call', new Date(), baseContext)
+      expect(stageUpdate()).toBeUndefined()
+      expect(batchUpdateMock).toHaveBeenCalledTimes(1) // just the contact patch
+    })
+
+    it('does nothing when the contact has MORE THAN ONE Created opportunity (ambiguous which one)', async () => {
+      getDocsMock.mockResolvedValueOnce({
+        docs: [oppDoc('opp-1', 'created'), oppDoc('opp-2', 'created')],
+      })
+      await logContact('contact-1', 'Inbound Call', new Date(), baseContext)
+      expect(stageUpdate()).toBeUndefined()
+      expect(batchUpdateMock).toHaveBeenCalledTimes(1)
+    })
+
+    it('a returned voicemail advances the opportunity when a prior Outbound Call - VM is within 3 days', async () => {
+      const loggedAt = new Date(10 * 86_400_000) // day 10, UTC epoch
+      getDocsMock
+        .mockResolvedValueOnce({ docs: [oppDoc('opp-1', 'created')] }) // opportunities query
+        .mockResolvedValueOnce({ docs: [actDoc('Outbound Call - VM', 9 * 86_400)] }) // activities query
+      await logContact('contact-1', 'Voicemail Returned', loggedAt, baseContext)
+      const update = stageUpdate()
+      expect(update).toBeDefined()
+      expect(update![1]).toMatchObject({ stage: 'in-conversation' })
+    })
+
+    it('a returned voicemail does NOT advance the opportunity with no qualifying prior voicemail', async () => {
+      const loggedAt = new Date(10 * 86_400_000)
+      getDocsMock
+        .mockResolvedValueOnce({ docs: [oppDoc('opp-1', 'created')] })
+        .mockResolvedValueOnce({ docs: [] }) // no matching recent activity
+      await logContact('contact-1', 'Voicemail Returned', loggedAt, baseContext)
+      expect(stageUpdate()).toBeUndefined()
+    })
+
+    it('the stage-advancement write and the contact/activity writes share one batch/commit', async () => {
+      getDocsMock.mockResolvedValueOnce({ docs: [oppDoc('opp-1', 'created')] })
+      await logContact('contact-1', 'Inbound Call', new Date(), baseContext)
+      expect(writeBatchMock).toHaveBeenCalledTimes(1)
+      expect(batchCommitMock).toHaveBeenCalledTimes(1)
+    })
   })
 
   it('passes organizationId through as null when the contact has no organization', async () => {

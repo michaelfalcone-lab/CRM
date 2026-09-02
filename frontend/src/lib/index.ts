@@ -42,8 +42,10 @@ export {
 export {
   useOpportunitiesForContact,
   useOpportunitiesForOrganization,
+  useAllOpportunities,
   createOpportunity,
   updateOpportunity,
+  deleteOpportunity,
   type CreateOpportunityInput,
   type UpdateOpportunityInput,
 } from './firestore/opportunities'

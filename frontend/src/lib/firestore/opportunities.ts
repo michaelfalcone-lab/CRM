@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react'
 import {
   addDoc,
   collection,
+  deleteDoc,
   deleteField,
   doc,
   onSnapshot,
@@ -46,6 +47,34 @@ export function useOpportunitiesForOrganization(
   return useOpportunitiesWhere(
     organizationId ? { field: 'organizationId', value: organizationId } : undefined,
   )
+}
+
+/** Every opportunity, most-recently-updated first — for the global
+ * Opportunities list (`/opportunities`), unscoped to any one contact or
+ * organization. */
+export function useAllOpportunities(): UseOpportunitiesResult {
+  const [opportunities, setOpportunities] = useState<WithId<Opportunity>[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    const q = query(collection(db, 'opportunities'), orderBy('updatedAt', 'desc'))
+    const unsubscribe = onSnapshot(
+      q,
+      (snapshot) => {
+        setOpportunities(snapshot.docs.map((d) => ({ id: d.id, ...(d.data() as Opportunity) })))
+        setLoading(false)
+        setError(null)
+      },
+      (err) => {
+        setError(err.message)
+        setLoading(false)
+      },
+    )
+    return unsubscribe
+  }, [])
+
+  return { opportunities, loading, error }
 }
 
 function useOpportunitiesWhere(
@@ -294,4 +323,21 @@ export async function updateOpportunity(
       tx.update(contactRef, { status: nextContactStatus, updatedAt: serverTimestamp() })
     }
   })
+}
+
+/**
+ * Permanently deletes opportunity `id`. A direct client delete, mirroring
+ * `deleteActivity`'s shape (see `firestore/contacts.ts`) — no batch or
+ * derived-field logic needed, since an opportunity doesn't drive a
+ * denormalized field on another doc the way an activity drives
+ * `Contact.lastContactDate`. Firestore rules (the `opportunities` match
+ * block), not this function, are what actually enforce who may delete —
+ * see that rule's comment for why it mirrors `activities`' owner-or-admin
+ * delete rather than staying admin-only. Like `updateOpportunity` reopening
+ * a deal, this does NOT revert the linked contact's `status` even if the
+ * deleted opportunity was what drove a win/loss transition — status
+ * advancement is a one-way signal, not something a delete unwinds.
+ */
+export async function deleteOpportunity(id: string): Promise<void> {
+  await deleteDoc(doc(db, 'opportunities', id))
 }

@@ -14,6 +14,7 @@ const NAV_ITEMS: NavItem[] = [
   { to: '/dashboard', label: 'Dashboard' },
   { to: '/contacts', label: 'Contacts' },
   { to: '/organizations', label: 'Organizations' },
+  { to: '/opportunities', label: 'Opportunities' },
   { to: '/import', label: 'Import' },
   // Duplicates is reachable by every active user (Task 10) — this build
   // has no read-visibility gates (see `firestore.rules`' `allow read: if

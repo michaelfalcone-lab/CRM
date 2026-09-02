@@ -8,7 +8,8 @@
   grid-template-columns: 2fr 1fr;
   grid-template-areas:
     'output gauge'
-    'pipeline table';
+    'pipeline table'
+    'orgInterest orgInterest';
   gap: var(--space-5);
   align-items: start;
 }
@@ -25,6 +26,9 @@
 .results {
   grid-area: table;
 }
+.orgInterest {
+  grid-area: orgInterest;
+}
 
 @media (max-width: 960px) {
   .grid {
@@ -33,7 +37,8 @@
       'output'
       'gauge'
       'pipeline'
-      'table';
+      'table'
+      'orgInterest';
   }
 }
 

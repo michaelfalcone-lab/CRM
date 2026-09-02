@@ -1,0 +1,33 @@
+/* Dark-panel override for the shared `Table` primitives — same pattern as
+   `ConversionResultsTable.module.css` (see its doc comment for why this
+   can't just reuse the default light-page `Table` styling). */
+.darkTable th {
+  background: var(--viz-near-black);
+  color: var(--brand-white);
+  font-family: var(--font-heading);
+}
+
+.darkTable td {
+  color: var(--brand-white);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.15);
+}
+
+.darkTable tbody tr:nth-child(even) {
+  background: transparent;
+}
+
+.darkTable tbody tr:nth-child(even) td {
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.orgLink {
+  color: var(--brand-white);
+  text-decoration: underline;
+}
+
+.status {
+  margin: 0;
+  color: var(--viz-light-warm-gray);
+  font-family: var(--font-caption);
+  font-size: var(--font-size-caption);
+}

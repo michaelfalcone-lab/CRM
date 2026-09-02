@@ -23,6 +23,7 @@ import {
   deleteDoc,
   deleteField,
   doc,
+  getDocs,
   onSnapshot,
   orderBy,
   query,
@@ -33,9 +34,15 @@ import {
   writeBatch,
   type QueryConstraint,
 } from 'firebase/firestore'
-import type { ActivityType, Contact, FirestoreTimestamp, LastContactMode } from 'shared'
+import { WIN_ACTIVITY_TYPES, type ActivityType, type Contact, type FirestoreTimestamp, type LastContactMode } from 'shared'
 import { db } from '../firebase'
 import type { WithId } from '../firestoreTypes'
+import {
+  CREATED_STAGE_ID,
+  IN_CONVERSATION_STAGE_ID,
+  qualifiesForInConversation,
+  type RecentActivityForStageCheck,
+} from '../opportunityStageWorkflow'
 import { advanceStatusOnActivity } from '../statusWorkflow'
 
 export interface ContactFilters {
@@ -289,9 +296,79 @@ export interface LogContactContext {
 }
 
 /**
+ * Folds an `opportunities/{id}` stage update into `batch` when this newly
+ * logged activity is the two-way interaction that should advance the
+ * contact's opportunity out of Created — see `qualifiesForInConversation`'s
+ * doc comment in `../opportunityStageWorkflow` for the exact rule.
+ *
+ * Only runs its Firestore reads at all for an activity type that could
+ * possibly matter (`WIN_ACTIVITY_TYPES`) — an `'Onsite Appointment'` or
+ * `'Other'` entry never touches Firestore beyond the writes `logContact`
+ * already makes.
+ *
+ * Deliberately skips entirely (does nothing, not an error) when the contact
+ * has more than one opportunity still in Created — confirmed product
+ * decision: `Activity` has no `opportunityId` field, so which opportunity a
+ * logged activity is "about" is only unambiguous when there's exactly one.
+ * A contact with zero Created opportunities is also a no-op — nothing to
+ * advance.
+ *
+ * Reads happen before any `batch.update`/`batch.set` call in `logContact`,
+ * but `writeBatch` (unlike `runTransaction`) has no read-before-write
+ * ordering requirement — these are just plain one-off `getDocs` calls, not
+ * part of a transaction snapshot.
+ */
+async function maybeAdvanceOpportunityStage(
+  batch: ReturnType<typeof writeBatch>,
+  contactId: string,
+  loggedType: ActivityType,
+  occurredAt: Timestamp,
+): Promise<void> {
+  if (!WIN_ACTIVITY_TYPES.includes(loggedType)) return
+
+  const opportunitiesSnap = await getDocs(
+    query(collection(db, 'opportunities'), where('contactId', '==', contactId)),
+  )
+  // Filtered client-side rather than via `where('stage', '==', ...)` — a
+  // contact's opportunity count is always tiny, so this avoids a new
+  // composite index the same way `useContacts` already filters
+  // `mergedInto` client-side rather than adding one for that.
+  const createdOpportunities = opportunitiesSnap.docs.filter(
+    (d) => d.data().stage === CREATED_STAGE_ID,
+  )
+  if (createdOpportunities.length !== 1) return
+
+  let recentActivities: RecentActivityForStageCheck[] = []
+  if (loggedType === 'Voicemail Returned' || loggedType === 'Email Reply Received') {
+    // `.seconds` accessed directly (not `.toMillis()`) — matches every other
+    // read of a Firestore Timestamp/FirestoreTimestamp in this codebase.
+    const threshold = Timestamp.fromMillis((occurredAt.seconds - 3 * 86_400) * 1000)
+    const recentSnap = await getDocs(
+      query(
+        collection(db, 'activities'),
+        where('contactId', '==', contactId),
+        where('occurredAt', '>=', threshold),
+        // Explicit — satisfied by the existing `activities (contactId ASC,
+        // occurredAt DESC)` composite index only with this direction; an
+        // omitted/ascending orderBy would need a different index.
+        orderBy('occurredAt', 'desc'),
+      ),
+    )
+    recentActivities = recentSnap.docs.map((d) => d.data() as RecentActivityForStageCheck)
+  }
+
+  if (!qualifiesForInConversation(loggedType, occurredAt.seconds, recentActivities)) return
+
+  batch.update(doc(db, 'opportunities', createdOpportunities[0]!.id), {
+    stage: IN_CONVERSATION_STAGE_ID,
+    updatedAt: serverTimestamp(),
+  })
+}
+
+/**
  * The contact detail page's one dominant primary action: records that the
- * rep just made contact, right now, by the given `type`. Writes two docs
- * in a single `writeBatch` so they can never partially fail:
+ * rep just made contact, right now, by the given `type`. Writes up to three
+ * things in a single `writeBatch` so they can never partially fail:
  *   1. The legacy `Contact.lastContactDate`/`lastContactMode` update (via
  *      `ACTIVITY_TYPE_TO_LAST_CONTACT_MODE`'s mapping) — unchanged shape,
  *      so `commitImport` and the contact-edit form keep working.
@@ -300,6 +377,8 @@ export interface LogContactContext {
  *      `lastContactMode`/`lastContactDate` via `updateContact` (the
  *      contact-edit form) must NOT create one, or correcting a typo would
  *      inflate a rep's activity counts on the dashboard.
+ *   3. Conditionally, an `opportunities/{id}` stage update — see
+ *      `maybeAdvanceOpportunityStage` below.
  */
 export async function logContact(
   id: string,
@@ -322,6 +401,8 @@ export async function logContact(
   const nextStatus = advanceStatusOnActivity(context.currentStatus, type)
   if (nextStatus !== undefined) contactPatch.status = nextStatus
   batch.update(doc(db, 'contacts', id), contactPatch)
+
+  await maybeAdvanceOpportunityStage(batch, id, type, occurredAt)
 
   // Record<string, unknown>, not typed as `Activity`, for the same reason
   // every other write payload in this file is: `serverTimestamp()`

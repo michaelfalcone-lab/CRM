@@ -58,6 +58,9 @@ vi.mock('./ConnectionRateGauge', () => ({
 vi.mock('./ConversionResultsTable', () => ({
   ConversionResultsTable: () => <div data-testid="conversion-results-table" />,
 }))
+vi.mock('./OrganizationInterestPanel', () => ({
+  OrganizationInterestPanel: () => <div data-testid="org-interest-panel" />,
+}))
 
 import { DashboardPage } from './DashboardPage'
 
@@ -74,7 +77,7 @@ function emptyData() {
 }
 
 describe('DashboardPage — custom preset with no valid range', () => {
-  it('renders all four widgets for the default (Overall) preset', () => {
+  it('renders all five widgets for the default (Overall) preset', () => {
     useDashboardDataMock.mockReturnValue(emptyData())
     render(<DashboardPage />)
 
@@ -82,6 +85,7 @@ describe('DashboardPage — custom preset with no valid range', () => {
     expect(screen.getByTestId('pipeline-chart')).toBeInTheDocument()
     expect(screen.getByTestId('win-rate-gauge')).toBeInTheDocument()
     expect(screen.getByTestId('conversion-results-table')).toBeInTheDocument()
+    expect(screen.getByTestId('org-interest-panel')).toBeInTheDocument()
   })
 
   it('hides every widget and shows an explicit empty state when Custom is picked with no dates yet', async () => {
@@ -100,6 +104,7 @@ describe('DashboardPage — custom preset with no valid range', () => {
     expect(screen.queryByTestId('pipeline-chart')).not.toBeInTheDocument()
     expect(screen.queryByTestId('win-rate-gauge')).not.toBeInTheDocument()
     expect(screen.queryByTestId('conversion-results-table')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('org-interest-panel')).not.toBeInTheDocument()
     expect(screen.getByText('Choose a date range')).toBeInTheDocument()
   })
 

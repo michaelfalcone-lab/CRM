@@ -3,7 +3,10 @@
  * Every query here range-filters exactly one field with no other
  * equality/order-by clause, so Firestore's automatic single-field
  * indexing covers all of them — no `firestore.indexes.json` entry needed
- * (see the Task 8b brief's "Queries" section).
+ * (see the Task 8b brief's "Queries" section) — with one exception: the
+ * Connection Rate widget's response-activities query below also filters on
+ * `type`, so it needs an explicit composite index (see that query's own
+ * comment and `firestore.indexes.json`).
  *
  * `opportunities` needs three SEPARATE queries, one per timestamp field
  * (`createdAt`, `wonAt`, `lostAt`) — a single query can't range-filter
@@ -34,7 +37,7 @@
  * "any time, ever," but critically still an inequality filter that keeps
  * Firestore's has-the-field requirement in effect.
  */
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import {
   collection,
   onSnapshot,
@@ -67,12 +70,20 @@ const EPOCH = new Date(0)
  * the epoch — for an optional field, so "overall" still means "has ever
  * had this field set," not "every document regardless"). Generic over
  * the doc shape so it backs both the `activities` and the three
- * `opportunities` queries below. */
+ * `opportunities` queries below.
+ *
+ * `extraConstraints`, when given, is prepended unconditionally (even when
+ * `range` is `null`) — used by the Connection Rate response-activities
+ * query below to additionally filter on `type`. It MUST be referentially
+ * stable across renders (e.g. `useMemo` with an empty dependency array,
+ * not an inline array literal built fresh every render): it sits in this
+ * hook's `useEffect` dependency array, so a freshly-allocated array every
+ * render would resubscribe in an infinite loop. */
 function useRangeQuery<T>(
   collectionName: string,
   field: string,
   range: PeriodRange | null,
-  options: { fieldAlwaysPresent: boolean },
+  options: { fieldAlwaysPresent: boolean; extraConstraints?: QueryConstraint[] },
 ): RangeQueryResult<T> {
   const [items, setItems] = useState<WithId<T>[]>([])
   const [loading, setLoading] = useState(true)
@@ -83,11 +94,11 @@ function useRangeQuery<T>(
   // re-subscribe.
   const startMs = range ? range.start.getTime() : null
   const endMs = range ? range.end.getTime() : null
-  const { fieldAlwaysPresent } = options
+  const { fieldAlwaysPresent, extraConstraints } = options
 
   useEffect(() => {
     setLoading(true)
-    const constraints: QueryConstraint[] = []
+    const constraints: QueryConstraint[] = [...(extraConstraints ?? [])]
     if (startMs !== null && endMs !== null) {
       constraints.push(where(field, '>=', Timestamp.fromDate(new Date(startMs))))
       constraints.push(where(field, '<=', Timestamp.fromDate(new Date(endMs))))
@@ -110,45 +121,7 @@ function useRangeQuery<T>(
       },
     )
     return unsubscribe
-  }, [collectionName, field, startMs, endMs, fieldAlwaysPresent])
-
-  return { items, loading, error }
-}
-
-/**
- * Every response-type activity, ALL TIME — deliberately not period-scoped.
- *
- * The Connection Rate widget asks "of everyone we own, how many have ever
- * responded", so it can't reuse the period-scoped `activities` query
- * above: that would shrink the numerator with the date filter while the
- * denominator (all owned contacts) stayed fixed, making the rate collapse
- * toward zero whenever a narrow period was selected.
- *
- * Filters server-side on `type` rather than reading the whole collection
- * and filtering in the client — a single-field `in` query, so Firestore's
- * automatic indexing covers it with no `firestore.indexes.json` entry.
- */
-function useAllTimeResponseActivities(): RangeQueryResult<Activity> {
-  const [items, setItems] = useState<WithId<Activity>[]>([])
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
-
-  useEffect(() => {
-    const q = query(collection(db, 'activities'), where('type', 'in', [...WIN_ACTIVITY_TYPES]))
-    const unsubscribe = onSnapshot(
-      q,
-      (snapshot) => {
-        setItems(snapshot.docs.map((d) => ({ id: d.id, ...(d.data() as Activity) })))
-        setLoading(false)
-        setError(null)
-      },
-      (err) => {
-        setError(err.message)
-        setLoading(false)
-      },
-    )
-    return unsubscribe
-  }, [])
+  }, [collectionName, field, startMs, endMs, fieldAlwaysPresent, extraConstraints])
 
   return { items, loading, error }
 }
@@ -158,8 +131,10 @@ export interface DashboardData {
   opportunitiesCreated: WithId<Opportunity>[]
   opportunitiesWon: WithId<Opportunity>[]
   opportunitiesLost: WithId<Opportunity>[]
-  /** All-time response activities, for the Connection Rate widget only — every
-   * other field here is period-scoped. */
+  /** Response-type activities (`WIN_ACTIVITY_TYPES`), period-scoped like
+   * everything else here — for the Connection Rate widget's numerator. The
+   * widget's denominator (all owned contacts) is fetched separately in
+   * `DashboardPage.tsx` and deliberately stays unscoped. */
   responseActivities: WithId<Activity>[]
   loading: boolean
   error: string | null
@@ -182,7 +157,25 @@ export function useDashboardData(range: PeriodRange | null): DashboardData {
   const lost = useRangeQuery<Opportunity>('opportunities', 'lostAt', range, {
     fieldAlwaysPresent: false,
   })
-  const responses = useAllTimeResponseActivities()
+  // `useMemo` with an empty dependency array (not a fresh array literal
+  // passed inline) — its referential stability across re-renders is what
+  // `useRangeQuery`'s `extraConstraints` dependency relies on. Computed
+  // lazily inside the hook, rather than as a module-level constant, so
+  // `where(...)` isn't called at module-import time — a module-level call
+  // to a mocked Firestore function breaks tests that mock `firebase/firestore`
+  // (the mock's own module-scope `const` hasn't initialized yet when this
+  // module is first imported; see `useDashboardData.test.ts`).
+  const responseActivityConstraints = useMemo<QueryConstraint[]>(
+    () => [where('type', 'in', [...WIN_ACTIVITY_TYPES])],
+    [],
+  )
+  // Also filters on `type` (via `extraConstraints`), unlike every other
+  // query in this file — see this query's composite index in
+  // `firestore.indexes.json` and this file's header comment.
+  const responses = useRangeQuery<Activity>('activities', 'occurredAt', range, {
+    fieldAlwaysPresent: true,
+    extraConstraints: responseActivityConstraints,
+  })
 
   return {
     activities: activities.items,

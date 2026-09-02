@@ -51,6 +51,7 @@ export interface UserSeed {
 export const TEAM_USERS: readonly UserSeed[] = [
   { email: 'kimberly_dieroff@brown.edu', displayName: 'Kim Dieroff', role: 'admin' },
   { email: 'jeremy_blake-johnson@brown.edu', displayName: 'Jeremy Blake-Johnson', role: 'admin' },
+  { email: 'raymond_c_grant@brown.edu', displayName: 'Ray Grant', role: 'admin' },
   { email: 'michael_woodley@brown.edu', displayName: 'Michael Woodley', role: 'rep' },
   { email: 'jordan_sullivan@brown.edu', displayName: 'Jordan Sullivan', role: 'rep' },
 ]
