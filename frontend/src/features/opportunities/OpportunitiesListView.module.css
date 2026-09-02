@@ -20,3 +20,30 @@
 .error {
   color: var(--color-danger-fg);
 }
+
+/* Mirrors ContactListView.module.css's sortable-header treatment — a
+   sortable header is visually identical to a plain one apart from the
+   cursor and the arrow. */
+.sortButton {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: 0;
+  border: none;
+  background: transparent;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+}
+
+.sortButton:hover {
+  text-decoration: underline;
+}
+
+/* Fixed width so the header text doesn't shift sideways as the arrow
+   appears and disappears between sort states. */
+.sortArrow {
+  display: inline-block;
+  width: 0.75em;
+  font-size: 0.7em;
+}
