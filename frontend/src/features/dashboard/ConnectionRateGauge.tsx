@@ -98,7 +98,7 @@ export function ConnectionRateGauge({ result }: ConnectionRateGaugeProps) {
   return (
     <DashboardPanel
       title="Connection Rate"
-      subtitle="Contacts who connected this period ÷ all contacts"
+      subtitle="Contacts who connected ÷ contacts touched, this period"
     >
       <div
         className={styles.gaugeWrap}

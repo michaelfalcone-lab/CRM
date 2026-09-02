@@ -199,9 +199,9 @@ export function computeTotalOutput(
 const WIN_ACTIVITY_TYPE_SET: ReadonlySet<ActivityType> = new Set(WIN_ACTIVITY_TYPES)
 
 export interface ConnectionRateResult {
-  /** Distinct contacts with at least one qualifying connection, ever. */
+  /** Distinct contacts touched this period who connected back. */
   connectedCount: number
-  /** All contacts owned by a rep in the directory. */
+  /** Distinct contacts touched by any activity this period. */
   totalCount: number
   /** `connectedCount / totalCount`, or `null` when there are no contacts
    * at all — callers must render that explicitly (e.g. "—"), never coerce
@@ -209,60 +209,43 @@ export interface ConnectionRateResult {
   rate: number | null
 }
 
-export interface ContactLike {
-  id: string
-  ownerId: string
-}
-
-export interface ResponseActivityLike {
-  contactId: string
-  type: ActivityType
-}
-
 /**
- * The dashboard's "Connection Rate": of every contact the team owns, what
- * share connected back (answered, replied, or returned a voicemail) during
- * the selected period. Formerly labelled "Win Rate" — same calculation.
+ * The dashboard's "Connection Rate": of the contacts touched by ANY logged
+ * activity this period (the same pool `computeTotalOutput` is built from —
+ * a call, an email, a meeting, anything), what share connected back
+ * (answered, replied, or returned a voicemail) during that same period.
+ * Formerly labelled "Win Rate" — same calculation.
  *
- * Half period-scoped, half not, on purpose: `contacts` (the denominator)
- * stays all-time — "everyone we're responsible for" shouldn't shrink just
- * because a narrow period is selected — but `activities` (the numerator)
- * IS period-scoped, so the rate answers "of everyone we own, how many did
- * we hear from during this period", and legitimately reads low on narrow
- * ranges like "Today". Callers must pass a period-scoped `activities` array
- * (`useDashboardData`'s `responseActivities`) for this to be meaningful.
+ * Fully period-scoped now, both halves from the same `activities` array —
+ * a contact nobody touched this period isn't counted in either number,
+ * which is why this reads as "of who we worked this period, how many
+ * responded" rather than "of everyone we've ever owned".
  *
  * Counts distinct CONTACTS, not activities — five replies from one
  * prospect is one responsive contact, not five. `connectedCount` can
- * therefore never exceed `totalCount`, including when activity exists for
- * a contact outside the given set (deleted, merged away, or owned by
- * someone off the directory): such activity is ignored rather than
- * counted, which would otherwise render as a rate above 100%.
+ * therefore never exceed `totalCount`. An activity whose `ownerId` isn't in
+ * the current rep directory (e.g. a deactivated account) is excluded
+ * entirely, matching `computeTotalOutput`'s same exclusion.
  */
 export function computeConnectionRate(
-  contacts: ContactLike[],
-  activities: ResponseActivityLike[],
+  activities: ActivityLike[],
   reps: RepDirectoryEntry[],
 ): ConnectionRateResult {
   const repIds = new Set(reps.map((rep) => rep.ownerId))
-  const ownedContactIds = new Set(
-    contacts.filter((contact) => repIds.has(contact.ownerId)).map((contact) => contact.id),
-  )
+  const touched = new Set<string>()
+  const connected = new Set<string>()
 
-  const responded = new Set<string>()
   for (const activity of activities) {
-    if (!WIN_ACTIVITY_TYPE_SET.has(activity.type)) continue
-    // Only contacts actually in the denominator can count toward the
-    // numerator — see this function's doc comment.
-    if (!ownedContactIds.has(activity.contactId)) continue
-    responded.add(activity.contactId)
+    if (!repIds.has(activity.ownerId)) continue
+    touched.add(activity.contactId)
+    if (WIN_ACTIVITY_TYPE_SET.has(activity.type)) connected.add(activity.contactId)
   }
 
-  const totalCount = ownedContactIds.size
+  const totalCount = touched.size
   return {
-    connectedCount: responded.size,
+    connectedCount: connected.size,
     totalCount,
-    rate: totalCount === 0 ? null : responded.size / totalCount,
+    rate: totalCount === 0 ? null : connected.size / totalCount,
   }
 }
 

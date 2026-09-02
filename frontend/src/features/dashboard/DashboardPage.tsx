@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import { useCurrentUser } from '../../app/AuthProvider'
-import { useContacts, useOpportunityStages, useOwnerDirectory } from '../../lib'
+import { useOpportunityStages, useOwnerDirectory } from '../../lib'
 import {
   computeConversionResults,
   computePipeline,
@@ -37,13 +37,6 @@ export function DashboardPage() {
   const { user } = useCurrentUser()
   const { owners, loading: ownersLoading } = useOwnerDirectory(user)
   const { stages, loading: stagesLoading } = useOpportunityStages()
-  // Unfiltered and NOT period-scoped: the Connection Rate widget's
-  // denominator is every contact the team owns, all time — this stays fixed
-  // regardless of the selected period. `useContacts` already drops
-  // merged-away duplicates, which must not inflate the denominator. The
-  // widget's numerator (response activities), by contrast, IS period-scoped
-  // — see `data.responseActivities` in `useDashboardData.ts`.
-  const { contacts, loading: contactsLoading } = useContacts()
 
   const [preset, setPreset] = useState<PeriodPreset>('overall')
   const [customStart, setCustomStart] = useState('')
@@ -92,8 +85,8 @@ export function DashboardPage() {
     [data.activities, reps],
   )
   const responseRate = useMemo(
-    () => computeConnectionRate(contacts, data.responseActivities, reps),
-    [contacts, data.responseActivities, reps],
+    () => computeConnectionRate(data.activities, reps),
+    [data.activities, reps],
   )
   const conversionResults = useMemo(
     () => computeConversionResults(data.activities, data.opportunitiesCreated, data.opportunitiesWon, reps),
@@ -108,7 +101,7 @@ export function DashboardPage() {
     [pipelineScope, stages, reps],
   )
 
-  const loading = ownersLoading || stagesLoading || contactsLoading || data.loading
+  const loading = ownersLoading || stagesLoading || data.loading
 
   // A 'custom' preset with no complete/valid range MUST NOT fall through
   // to rendering the widgets against `useDashboardData(null)` — that scope

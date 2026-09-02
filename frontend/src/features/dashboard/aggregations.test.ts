@@ -182,108 +182,90 @@ describe('computeTotalOutput', () => {
 })
 
 describe('computeConnectionRate', () => {
-  const REPS_CR: RepDirectoryEntry[] = [
-    { ownerId: 'rep-a', displayName: 'Alice' },
-    { ownerId: 'rep-b', displayName: 'Bob' },
-  ]
-  const owned = (id: string, ownerId = 'rep-a') => ({ id, ownerId })
-  const act = (contactId: string, type: ActivityType) => ({ contactId, type })
+  const day1 = ts(new Date(2026, 7, 1))
+  const cr = (contactId: string, ownerId: string, type: ActivityType) =>
+    activity({ contactId, ownerId, type, occurredAt: day1 })
 
-  it('returns a null rate (not 0, not NaN) when there are no contacts at all', () => {
-    const result = computeConnectionRate([], [], REPS_CR)
+  it('returns a null rate (not 0, not NaN) when there are no activities at all', () => {
+    const result = computeConnectionRate([], REPS)
     expect(result).toEqual({ connectedCount: 0, totalCount: 0, rate: null })
   })
 
-  it('counts a contact as responded once it has an inbound call', () => {
-    const result = computeConnectionRate(
-      [owned('c1'), owned('c2')],
-      [act('c1', 'Inbound Call')],
-      REPS_CR,
-    )
-    expect(result).toEqual({ connectedCount: 1, totalCount: 2, rate: 0.5 })
+  it('a contact touched by an inbound call is both touched and connected', () => {
+    const result = computeConnectionRate([cr('c1', 'rep-a', 'Inbound Call')], REPS)
+    expect(result).toEqual({ connectedCount: 1, totalCount: 1, rate: 1 })
   })
 
-  it('does NOT count an outbound email that has no reply logged against it', () => {
-    const result = computeConnectionRate([owned('c1')], [act('c1', 'Email')], REPS_CR)
+  it('a contact touched only by an outbound email (no reply) counts toward the denominator, not the numerator', () => {
+    const result = computeConnectionRate([cr('c1', 'rep-a', 'Email')], REPS)
     expect(result).toEqual({ connectedCount: 0, totalCount: 1, rate: 0 })
   })
 
-  it('does NOT count a voicemail left with no callback logged', () => {
+  it('a contact touched only by a voicemail left (no callback) counts toward the denominator, not the numerator', () => {
+    const result = computeConnectionRate([cr('c1', 'rep-a', 'Outbound Call - VM')], REPS)
+    expect(result).toEqual({ connectedCount: 0, totalCount: 1, rate: 0 })
+  })
+
+  it('a contact touched only by a meeting/other-type activity still counts toward the denominator, not the numerator', () => {
+    // The point of the fix: the denominator is "everyone this period's
+    // output touched" (matching computeTotalOutput's exact scope), not just
+    // contacts reached by call or email — but a meeting alone still isn't a
+    // "connection" for the numerator.
     const result = computeConnectionRate(
-      [owned('c1')],
-      [act('c1', 'Outbound Call - VM')],
-      REPS_CR,
+      [cr('c1', 'rep-a', 'Onsite Appointment'), cr('c2', 'rep-a', 'Other')],
+      REPS,
     )
-    expect(result.connectedCount).toBe(0)
+    expect(result).toEqual({ connectedCount: 0, totalCount: 2, rate: 0 })
   })
 
   it('counts the contact once the emailed prospect replies', () => {
     // The workflow this metric exists for: the outbound touch alone is not
-    // a win; logging the reply later is what converts it.
+    // a connection; logging the reply is what converts it.
     const result = computeConnectionRate(
-      [owned('c1')],
-      [act('c1', 'Email'), act('c1', 'Email Reply Received')],
-      REPS_CR,
+      [cr('c1', 'rep-a', 'Email'), cr('c1', 'rep-a', 'Email Reply Received')],
+      REPS,
     )
     expect(result).toEqual({ connectedCount: 1, totalCount: 1, rate: 1 })
   })
 
   it('counts the contact once a voicemail is returned', () => {
     const result = computeConnectionRate(
-      [owned('c1')],
-      [act('c1', 'Outbound Call - VM'), act('c1', 'Voicemail Returned')],
-      REPS_CR,
+      [cr('c1', 'rep-a', 'Outbound Call - VM'), cr('c1', 'rep-a', 'Voicemail Returned')],
+      REPS,
     )
-    expect(result.connectedCount).toBe(1)
+    expect(result).toEqual({ connectedCount: 1, totalCount: 1, rate: 1 })
   })
 
-  it('counts a contact only once no matter how many qualifying replies it has', () => {
+  it('counts a contact only once no matter how many qualifying activities it has', () => {
     const result = computeConnectionRate(
-      [owned('c1')],
       [
-        act('c1', 'Inbound Call'),
-        act('c1', 'Email Reply Received'),
-        act('c1', 'Outbound Call - Talked To'),
+        cr('c1', 'rep-a', 'Inbound Call'),
+        cr('c1', 'rep-a', 'Email Reply Received'),
+        cr('c1', 'rep-a', 'Outbound Call - Talked To'),
       ],
-      REPS_CR,
+      REPS,
     )
     expect(result).toEqual({ connectedCount: 1, totalCount: 1, rate: 1 })
   })
 
-  it('does not count in-person activity types, which are out of scope for this build', () => {
+  it('excludes activity logged by an owner outside the rep directory', () => {
+    // A deactivated/off-directory account's activity must not inflate
+    // either number — matches computeTotalOutput's same exclusion.
     const result = computeConnectionRate(
-      [owned('c1')],
-      [act('c1', 'Onsite Appointment')],
-      REPS_CR,
-    )
-    expect(result.connectedCount).toBe(0)
-  })
-
-  it('ignores activity for a contact that is not in the contact set', () => {
-    // A stale/orphaned activity must never push connectedCount above
-    // totalCount, which would render as a rate over 100%.
-    const result = computeConnectionRate(
-      [owned('c1')],
-      [act('c1', 'Inbound Call'), act('ghost', 'Inbound Call')],
-      REPS_CR,
-    )
-    expect(result).toEqual({ connectedCount: 1, totalCount: 1, rate: 1 })
-  })
-
-  it('excludes contacts owned by someone outside the rep directory', () => {
-    const result = computeConnectionRate(
-      [owned('c1', 'rep-a'), owned('c2', 'not-a-listed-rep')],
-      [act('c1', 'Inbound Call')],
-      REPS_CR,
+      [cr('c1', 'rep-a', 'Inbound Call'), cr('c2', 'not-a-listed-rep', 'Inbound Call')],
+      REPS,
     )
     expect(result).toEqual({ connectedCount: 1, totalCount: 1, rate: 1 })
   })
 
   it('counts contacts across every rep in the directory, not just one', () => {
     const result = computeConnectionRate(
-      [owned('c1', 'rep-a'), owned('c2', 'rep-b'), owned('c3', 'rep-b')],
-      [act('c2', 'Inbound Call')],
-      REPS_CR,
+      [
+        cr('c1', 'rep-a', 'Other'),
+        cr('c2', 'rep-b', 'Inbound Call'),
+        cr('c3', 'rep-b', 'Other'),
+      ],
+      REPS,
     )
     expect(result).toEqual({ connectedCount: 1, totalCount: 3, rate: 1 / 3 })
   })

@@ -35,7 +35,6 @@ vi.mock('firebase/firestore', () => ({
 
 vi.mock('../../lib/firebase', () => ({ db: {} }))
 
-import { WIN_ACTIVITY_TYPES } from 'shared'
 import { useDashboardData } from './useDashboardData'
 
 function whereFields(): string[] {
@@ -66,16 +65,6 @@ describe('useDashboardData — overall scope (range === null)', () => {
     expect(whereFields()).not.toContain('createdAt')
   })
 
-  it('still filters the response-activities query on type, even though occurredAt is unfiltered', () => {
-    renderHook(() => useDashboardData(null))
-
-    // The Connection Rate numerator's `type` filter is unconditional —
-    // applied via `extraConstraints`, independent of whether `occurredAt`
-    // itself is range-filtered. See `RESPONSE_ACTIVITY_CONSTRAINTS` in
-    // `useDashboardData.ts`.
-    expect(whereMock).toHaveBeenCalledWith('type', 'in', [...WIN_ACTIVITY_TYPES])
-  })
-
   it('applies exactly one where() per optional field (no upper bound for "overall")', () => {
     renderHook(() => useDashboardData(null))
 
@@ -101,29 +90,11 @@ describe('useDashboardData — a real period range', () => {
       expect(whereMock).toHaveBeenCalledWith(field, '<=', endTs)
     }
 
-    // Exactly two constraints (the >= and <= pair) per query — no leftover
-    // "overall" epoch filter sneaking in alongside a real range. `occurredAt`
-    // is used by TWO separate queries (`activities`, and the Connection
-    // Rate response-activities query), so it gets two pairs; every other
-    // field is used by exactly one query, so one pair.
-    const expectedPairsPerField: Record<string, number> = {
-      occurredAt: 2,
-      createdAt: 1,
-      wonAt: 1,
-      lostAt: 1,
-    }
-    for (const [field, pairs] of Object.entries(expectedPairsPerField)) {
+    // Exactly two constraints (the >= and <= pair) per field — no leftover
+    // "overall" epoch filter sneaking in alongside a real range.
+    for (const field of ['occurredAt', 'createdAt', 'wonAt', 'lostAt']) {
       const calls = whereMock.mock.calls.filter((call) => call[0] === field)
-      expect(calls).toHaveLength(pairs * 2)
+      expect(calls).toHaveLength(2)
     }
-  })
-
-  it('also filters the response-activities query on type alongside its occurredAt range', () => {
-    const start = new Date(2026, 7, 1)
-    const end = new Date(2026, 7, 31, 23, 59, 59, 999)
-
-    renderHook(() => useDashboardData({ start, end }))
-
-    expect(whereMock).toHaveBeenCalledWith('type', 'in', [...WIN_ACTIVITY_TYPES])
   })
 })
