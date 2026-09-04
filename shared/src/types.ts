@@ -65,7 +65,11 @@ export type LostReason =
 /** What an opportunity is selling — the ticket product, independent of
  * which sport it's for. See `PRODUCT_TYPES` for the ordered runtime list
  * the form's dropdown renders. */
-export type ProductType = 'Season Tickets' | 'Mini Plans' | 'Individual Ticket'
+export type ProductType =
+  | 'Season Tickets'
+  | 'Mini Plans'
+  | 'Individual Ticket'
+  | 'Group Tickets'
 
 /** Reserved identity-matching fields, shared by Contacts and Organizations,
  * for the future Paciolan sync (unused until phase 6). */

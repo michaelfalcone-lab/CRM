@@ -100,8 +100,14 @@ export const WIN_ACTIVITY_TYPES: readonly ActivityType[] = [
 ]
 
 /**
- * The ticket products an opportunity can be for, in dropdown order
- * (broadest commitment first, so the highest-value option leads).
+ * The ticket products an opportunity can be for, in dropdown order.
+ *
+ * The first three are the season-plan ladder, broadest commitment first so
+ * the highest-value option leads. `'Group Tickets'` is deliberately last
+ * rather than slotted into that ladder: a group buy is a one-off bulk sale
+ * for a single event, not a rung between a mini plan and a single seat, so
+ * ranking it by commitment would be arbitrary either way. New products of
+ * that kind should likewise be appended rather than interleaved.
  *
  * Typed `readonly ProductType[]` so adding a value here without extending
  * the union — or vice versa — is a compile error rather than a dropdown
@@ -111,6 +117,7 @@ export const PRODUCT_TYPES: readonly ProductType[] = [
   'Season Tickets',
   'Mini Plans',
   'Individual Ticket',
+  'Group Tickets',
 ]
 
 /**
