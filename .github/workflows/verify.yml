@@ -1,0 +1,76 @@
+# Runs the repo's own `npm run verify` gate on every push and pull request.
+#
+# Deliberately ONE step rather than a stage-per-job matrix: `verify` is
+# already the definition of "this change is safe to ship" (it is what
+# `npm run deploy` runs before touching Firebase), so invoking it verbatim
+# keeps CI and a developer's local check from ever drifting apart. Which
+# stage failed is visible in the step log, since npm prints the failing
+# script name.
+name: Verify
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+# A new push to the same branch cancels the previous run — the older result
+# is already stale, and the emulator suite is slow enough to be worth not
+# paying for twice.
+concurrency:
+  group: verify-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    env:
+      # `frontend/vite.config.ts` fails a production build when the Firebase
+      # Web config is missing, so that a deploy can't silently ship an app
+      # that white-screens on `auth/invalid-api-key`. These placeholders exist
+      # only to satisfy that gate: CI type-checks and bundles, it never signs
+      # in or deploys. Real values live in `frontend/.env.production.local` on
+      # the machine that runs `npm run deploy`. Do NOT add real credentials
+      # here — none of these are secret, but none of them are used either.
+      VITE_FIREBASE_API_KEY: ci-placeholder
+      VITE_FIREBASE_AUTH_DOMAIN: ci-placeholder.firebaseapp.com
+      VITE_FIREBASE_PROJECT_ID: ci-placeholder
+      VITE_FIREBASE_STORAGE_BUCKET: ci-placeholder.appspot.com
+      VITE_FIREBASE_MESSAGING_SENDER_ID: '000000000000'
+      VITE_FIREBASE_APP_ID: '1:000000000000:web:ciplaceholder'
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # `node-version-file` rather than a pinned literal, so bumping .nvmrc
+      # moves CI too instead of leaving it silently behind.
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      # The Firestore emulator is a Java process; `scripts/with-java.sh`
+      # honours an already-valid JAVA_HOME, which this sets.
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      # The emulator jars are downloaded on first use and are large enough
+      # to dominate the run without a cache.
+      - name: Cache Firebase emulators
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/firebase/emulators
+          key: firebase-emulators-${{ runner.os }}-${{ hashFiles('firebase.json') }}
+          restore-keys: firebase-emulators-${{ runner.os }}-
+
+      - name: Install dependencies
+        run: npm ci
+
+      # build:shared -> lint -> frontend tests -> rules tests -> functions
+      # tests -> build. Same command a developer runs locally.
+      - name: Verify
+        run: npm run verify

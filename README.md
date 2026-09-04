@@ -1,5 +1,7 @@
 # CRM
 
+[![Verify](https://github.com/michaelfalcone-lab/CRM/actions/workflows/verify.yml/badge.svg)](https://github.com/michaelfalcone-lab/CRM/actions/workflows/verify.yml)
+
 In-house ticket sales CRM for Brown University Athletics, built to track sales outreach,
 customer relationships, follow-ups, reporting, and revenue performance across eight
 ticketed sports. Integrates with Google and Paciolan, with customer search, Gmail
@@ -291,8 +293,51 @@ verification.
 
 After the script succeeds, have that admin sign in with Google normally — the existing
 `linkAccount` callable links their Firebase Auth uid to the bootstrapped `users` doc on
-first sign-in, exactly as it does for any other invited user. From there, they can invite
-everyone else through the app's normal admin UI / the `inviteUser` callable.
+first sign-in, exactly as it does for any other invited user. Everyone else is added with
+`scripts/seedUsers.ts`, below.
+
+### Adding a team member
+
+Access is an allowlist: `linkAccount` refuses any sign-in without a matching
+`users/{lowercased-email}` doc, so **the doc has to exist before the person first signs
+in** — signing in does not create it.
+
+There is deliberately no admin UI for this yet. `inviteUser` (the admin-only callable
+that creates these docs) is deployed and works, but nothing calls it: `UsersPage` is a
+placeholder and `AppShell`'s `ADMIN_NAV_ITEMS` is commented out. Until that lands, the
+supported path is the seed script, which writes a doc byte-identical to what `inviteUser`
+would have written.
+
+1. Add a row to `TEAM_USERS` in `scripts/seedUsers.ts`:
+
+   ```ts
+   { email: 'first_last@brown.edu', displayName: 'First Last', role: 'rep' },
+   ```
+
+   `role` is `'admin'` or `'rep'`, and `position` is optional (a job title, shown in the
+   top bar and the dashboard welcome banner). Emails must be `@brown.edu`; a bad row
+   aborts the whole run before any write.
+
+   Choose the role deliberately — it decides more than it looks like. Only `'rep'` users
+   appear in the Add Contact **Owner** picker, so an `'admin'` can create a contact but
+   cannot own one, and must assign it to a rep. In exchange, every `'rep'` gets a row on
+   the dashboard leaderboard whether or not they make calls.
+
+2. Run it against the project, with service-account credentials:
+
+   ```
+   GOOGLE_APPLICATION_CREDENTIALS=/path/to/service-account.json \
+   GCLOUD_PROJECT=brown-sales \
+     node scripts/seedUsers.ts
+   ```
+
+   It is idempotent per document: existing ids are reported as skipped and never
+   overwritten, so a re-run only creates the people you just added. **Do not pass
+   `--force`** on a live project — it rewrites every listed user, resetting their
+   `authUid` to null and signing them out.
+
+3. Have the new person sign in with Google once. `linkAccount` fills in their `authUid`,
+   and only then do they appear in the owner directory and its pickers.
 
 ## Brand assets
 
