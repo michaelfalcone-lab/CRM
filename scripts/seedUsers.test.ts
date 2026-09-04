@@ -45,6 +45,13 @@ describe('seedUsers', () => {
     expect(rep.createdAt).toBeDefined()
   })
 
+  it('writes an optional position when the seed row sets one', async () => {
+    await seedUsers(db)
+    const aidan = (await db.collection('users').doc('aidan_dwyer@brown.edu').get()).data()!
+    expect(aidan.position).toBe('Marketing Coordinator')
+    expect(aidan.role).toBe('admin')
+  })
+
   it('assigns admin vs rep roles as configured', async () => {
     await seedUsers(db)
     const admin = (await db.collection('users').doc('kimberly_dieroff@brown.edu').get()).data()!

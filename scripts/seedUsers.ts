@@ -43,15 +43,29 @@ export interface UserSeed {
   email: string
   displayName: string
   role: 'admin' | 'rep'
+  /** Job title, shown in the top bar (`AppShell`) and the dashboard welcome
+   * banner. Optional: the original team was seeded without one, and
+   * `inviteUser` writes the empty string, so omitting it here keeps a row
+   * byte-identical to what the callable would have written. */
+  position?: string
 }
 
-/** The initial Brown Athletics ticket-sales team. `michael_falcone@brown.edu`
+/** The Brown Athletics staff with CRM access. `michael_falcone@brown.edu`
  * is intentionally absent — it already exists from `bootstrapFirstAdmin`
- * and would just be skipped. */
+ * and would just be skipped.
+ *
+ * Grows by appending a row and re-running the script: existing ids are
+ * skipped per doc, so a re-run only creates the new person. */
 export const TEAM_USERS: readonly UserSeed[] = [
   { email: 'kimberly_dieroff@brown.edu', displayName: 'Kim Dieroff', role: 'admin' },
   { email: 'jeremy_blake-johnson@brown.edu', displayName: 'Jeremy Blake-Johnson', role: 'admin' },
   { email: 'raymond_c_grant@brown.edu', displayName: 'Ray Grant', role: 'admin' },
+  {
+    email: 'aidan_dwyer@brown.edu',
+    displayName: 'Aidan Dwyer',
+    role: 'admin',
+    position: 'Marketing Coordinator',
+  },
   { email: 'michael_woodley@brown.edu', displayName: 'Michael Woodley', role: 'rep' },
   { email: 'jordan_sullivan@brown.edu', displayName: 'Jordan Sullivan', role: 'rep' },
 ]
@@ -102,7 +116,7 @@ export async function seedUsers(
         email: t.id,
         displayName: t.displayName,
         photoURL: '',
-        position: '',
+        position: t.position ?? '',
         role: t.role,
         active: true,
         authUid: null,
